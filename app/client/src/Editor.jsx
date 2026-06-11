@@ -1,40 +1,53 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { useEditor, EditorContent } from '@tiptap/react'
 import StarterKit from '@tiptap/starter-kit'
 import Underline from '@tiptap/extension-underline'
-import debounce from 'lodash.debounce'
+
+const API = 'http://localhost:3000'
+
+function debounce(fn, delay) {
+  let timer
+  return (...args) => {
+    clearTimeout(timer)
+    timer = setTimeout(() => fn(...args), delay)
+  }
+}
 
 function Editor() {
   const [docId, setDocId] = useState(null)
   const [title, setTitle] = useState('Untitled')
+  const [saveStatus, setSaveStatus] = useState('All changes saved')
 
   const editor = useEditor({
     extensions: [StarterKit, Underline],
     content: '<p>Start typing your document here...</p>',
-    onUpdate: ({ editor }) => {
-      if (docId) {
-        saveDoc(docId, editor.getHTML(), title)
-      }
-    }
   })
 
-  const saveDoc = debounce(async (id, content, docTitle) => {
-    await fetch(`http://localhost:3000/docs/${id}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ content, title: docTitle })
-    })
-  }, 1000)
+  // Auto save function
+  const saveDoc = useCallback(
+    debounce(async (id, content, docTitle) => {
+      setSaveStatus('Saving...')
+      await fetch(`${API}/docs/${id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ content, title: docTitle })
+      })
+      setSaveStatus('All changes saved')
+    }, 1000),
+    []
+  )
 
+  // Load or create document on startup
   useEffect(() => {
+    if (!editor) return
     const init = async () => {
       let id = localStorage.getItem('docId')
 
       if (!id) {
-        const res = await fetch('http://localhost:3000/docs', {
+        const res = await fetch(`${API}/docs`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ title: 'Untitled', ownerId: 'user1' })
+          body: JSON.stringify({ title: 'Untitled' })
         })
         const data = await res.json()
         id = data.id
@@ -43,23 +56,28 @@ function Editor() {
 
       setDocId(id)
 
-      const res = await fetch(`http://localhost:3000/docs/${id}`)
+      const res = await fetch(`${API}/docs/${id}`)
       const data = await res.json()
       setTitle(data.title)
-
-      if (editor && data.content) {
-        editor.commands.setContent(data.content)
-      }
+      if (data.content) editor.commands.setContent(data.content)
     }
 
-    if (editor) init()
+    init()
   }, [editor])
+
+  // Trigger save on every edit
+  useEffect(() => {
+    if (!editor || !docId) return
+    editor.on('update', () => {
+      saveDoc(docId, editor.getHTML(), title)
+    })
+  }, [editor, docId, title, saveDoc])
 
   if (!editor) return null
 
   return (
     <div>
-      {/* Title field */}
+      {/* Title */}
       <input
         type="text"
         value={title}
@@ -72,7 +90,7 @@ function Editor() {
       />
 
       {/* Toolbar */}
-      <div className="flex gap-2 mb-4 flex-wrap">
+      <div className="flex gap-2 mb-4 flex-wrap items-center">
         <button onClick={() => editor.chain().focus().toggleBold().run()}
           className={`px-3 py-1 rounded border text-sm font-bold ${editor.isActive('bold') ? 'bg-gray-800 text-white' : 'bg-white'}`}>
           B
@@ -97,9 +115,10 @@ function Editor() {
           className={`px-3 py-1 rounded border text-sm ${editor.isActive('bulletList') ? 'bg-gray-800 text-white' : 'bg-white'}`}>
           • List
         </button>
+        <span className="ml-auto text-xs text-gray-400">{saveStatus}</span>
       </div>
 
-      {/* Editor Area */}
+      {/* Editor */}
       <EditorContent editor={editor}
         className="prose max-w-none focus:outline-none min-h-[400px]" />
     </div>

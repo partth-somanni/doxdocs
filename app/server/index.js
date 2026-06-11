@@ -1,51 +1,46 @@
 const express = require('express')
 const cors = require('cors')
-const { PrismaClient } = require('@prisma/client')
+const Database = require('better-sqlite3')
 
 const app = express()
-const prisma = new PrismaClient()
+const db = new Database('docs.db')
 
 app.use(cors())
 app.use(express.json())
 
+// Create table if it doesn't exist
+db.exec(`
+  CREATE TABLE IF NOT EXISTS documents (
+    id TEXT PRIMARY KEY,
+    title TEXT DEFAULT 'Untitled',
+    content TEXT DEFAULT '',
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  )
+`)
+
 // CREATE a document
-app.post('/docs', async (req, res) => {
-  try {
-    const { title, ownerId } = req.body
-    const doc = await prisma.document.create({
-      data: { title, ownerId }
-    })
-    res.json(doc)
-  } catch (err) {
-    res.status(400).json({ error: err.message })
-  }
+app.post('/docs', (req, res) => {
+  const id = Math.random().toString(36).slice(2)
+  const { title } = req.body
+  db.prepare('INSERT INTO documents (id, title) VALUES (?, ?)').run(id, title)
+  res.json({ id, title, content: '' })
 })
 
-// GET a document by id
-app.get('/docs/:id', async (req, res) => {
-  try {
-    const doc = await prisma.document.findUnique({
-      where: { id: req.params.id }
-    })
-    if (!doc) return res.status(404).json({ error: 'Not found' })
-    res.json(doc)
-  } catch (err) {
-    res.status(400).json({ error: err.message })
-  }
+// GET a document
+app.get('/docs/:id', (req, res) => {
+  const doc = db.prepare('SELECT * FROM documents WHERE id = ?').get(req.params.id)
+  if (!doc) return res.status(404).json({ error: 'Not found' })
+  res.json(doc)
 })
 
-// UPDATE a document's content
-app.patch('/docs/:id', async (req, res) => {
-  try {
-    const { content, title } = req.body
-    const doc = await prisma.document.update({
-      where: { id: req.params.id },
-      data: { content, title }
-    })
-    res.json(doc)
-  } catch (err) {
-    res.status(400).json({ error: err.message })
-  }
+// UPDATE a document
+app.patch('/docs/:id', (req, res) => {
+  const { content, title } = req.body
+  db.prepare(`
+    UPDATE documents SET content = ?, title = ?, updated_at = CURRENT_TIMESTAMP
+    WHERE id = ?
+  `).run(content, title, req.params.id)
+  res.json({ success: true })
 })
 
 app.listen(3000, () => console.log('Server running on port 3000'))
