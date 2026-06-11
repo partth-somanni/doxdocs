@@ -43,4 +43,16 @@ app.patch('/docs/:id', (req, res) => {
   res.json({ success: true })
 })
 
+// GET all documents
+app.get('/docs', (req, res) => {
+  const docs = db.prepare('SELECT * FROM documents ORDER BY updated_at DESC').all()
+  res.json(docs)
+})
+
+// DELETE a document
+app.delete('/docs/:id', (req, res) => {
+  db.prepare('DELETE FROM documents WHERE id = ?').run(req.params.id)
+  res.json({ success: true })
+})
+
 app.listen(3000, () => console.log('Server running on port 3000'))

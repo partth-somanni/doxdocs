@@ -13,8 +13,7 @@ function debounce(fn, delay) {
   }
 }
 
-function Editor() {
-  const [docId, setDocId] = useState(null)
+function Editor({ docId, onTitleChange }) {
   const [title, setTitle] = useState('Untitled')
   const [saveStatus, setSaveStatus] = useState('All changes saved')
 
@@ -38,32 +37,15 @@ function Editor() {
   )
 
   // Load or create document on startup
-  useEffect(() => {
-    if (!editor) return
-    const init = async () => {
-      let id = localStorage.getItem('docId')
-
-      if (!id) {
-        const res = await fetch(`${API}/docs`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ title: 'Untitled' })
-        })
-        const data = await res.json()
-        id = data.id
-        localStorage.setItem('docId', id)
-      }
-
-      setDocId(id)
-
-      const res = await fetch(`${API}/docs/${id}`)
-      const data = await res.json()
-      setTitle(data.title)
+useEffect(() => {
+  if (!editor || !docId) return
+  fetch(`${API}/docs/${docId}`)
+    .then(r => r.json())
+    .then(data => {
+      setTitle(data.title || 'Untitled')
       if (data.content) editor.commands.setContent(data.content)
-    }
-
-    init()
-  }, [editor])
+    })
+}, [editor, docId])
 
   // Trigger save on every edit
   useEffect(() => {
@@ -82,9 +64,10 @@ function Editor() {
         type="text"
         value={title}
         onChange={(e) => {
-          setTitle(e.target.value)
-          if (docId) saveDoc(docId, editor.getHTML(), e.target.value)
-        }}
+  setTitle(e.target.value)
+  onTitleChange(docId, e.target.value)  // ← add this line
+  if (docId) saveDoc(docId, editor.getHTML(), e.target.value)
+}}
         className="text-2xl font-bold border-none outline-none mb-4 w-full"
         placeholder="Untitled"
       />
