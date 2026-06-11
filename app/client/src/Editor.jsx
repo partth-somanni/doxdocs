@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
-import { useEditor, EditorContent, Extension } from '@tiptap/react'
+import { useEditor, EditorContent } from '@tiptap/react'
 import StarterKit from '@tiptap/starter-kit'
 import Underline from '@tiptap/extension-underline'
 import Placeholder from '@tiptap/extension-placeholder'
@@ -8,11 +8,10 @@ import { TextStyle } from '@tiptap/extension-text-style'
 import Highlight from '@tiptap/extension-highlight'
 import FontFamily from '@tiptap/extension-font-family'
 import TextAlign from '@tiptap/extension-text-align'
-import { Mark, mergeAttributes } from '@tiptap/core'
+import { Mark } from '@tiptap/core'
 
 const API = 'http://localhost:3000'
 
-// Custom FontSize extension (not built into Tiptap)
 const FontSize = Mark.create({
   name: 'fontSize',
   addOptions() {
@@ -73,9 +72,13 @@ function debounce(fn, delay) {
   }
 }
 
-// Small reusable toolbar separator
 function Sep() {
-  return <div className="w-px h-6 bg-gray-200 mx-1 self-center" />
+  return (
+    <div
+      className="mx-1 self-center"
+      style={{ width: 1, height: 24, background: 'var(--border)' }}
+    />
+  )
 }
 
 function Editor({ docId, onTitleChange }) {
@@ -101,7 +104,6 @@ function Editor({ docId, onTitleChange }) {
     content: '',
   })
 
-  // Auto save
   const saveDoc = useCallback(
     debounce(async (id, content, docTitle) => {
       setSaveStatus('Saving...')
@@ -115,7 +117,6 @@ function Editor({ docId, onTitleChange }) {
     []
   )
 
-  // Load document
   useEffect(() => {
     if (!editor || !docId) return
     fetch(`${API}/docs/${docId}`)
@@ -126,7 +127,6 @@ function Editor({ docId, onTitleChange }) {
       })
   }, [editor, docId])
 
-  // Trigger save on edit
   useEffect(() => {
     if (!editor || !docId) return
     editor.on('update', () => {
@@ -134,7 +134,6 @@ function Editor({ docId, onTitleChange }) {
     })
   }, [editor, docId, title, saveDoc])
 
-  // Close color pickers on outside click
   useEffect(() => {
     const close = () => {
       setShowTextColors(false)
@@ -146,10 +145,27 @@ function Editor({ docId, onTitleChange }) {
 
   if (!editor) return null
 
-  const btnBase = 'px-2 py-1 rounded border text-sm'
-  const active = 'bg-gray-800 text-white'
-  const inactive = 'bg-white'
-  const cls = (isActive) => `${btnBase} ${isActive ? active : inactive}`
+  // Button style helpers
+  const btnStyle = (isActive) => ({
+    padding: '2px 8px',
+    borderRadius: 6,
+    border: '1px solid var(--border-btn)',
+    fontSize: 13,
+    cursor: 'pointer',
+    background: isActive ? 'var(--bg-btn-active)' : 'var(--bg-btn)',
+    color: isActive ? 'var(--text-btn-active)' : 'var(--text-secondary)',
+  })
+
+  const selectStyle = {
+    fontSize: 13,
+    borderRadius: 6,
+    border: '1px solid var(--border-btn)',
+    background: 'var(--bg-btn)',
+    color: 'var(--text-primary)',
+    padding: '2px 4px',
+    height: 28,
+    cursor: 'pointer',
+  }
 
   return (
     <div>
@@ -164,87 +180,96 @@ function Editor({ docId, onTitleChange }) {
           onTitleChange(docId, e.target.value)
           if (docId) saveDoc(docId, editor.getHTML(), e.target.value)
         }}
-        className="text-2xl font-bold border-none outline-none mb-4 w-full"
+        style={{
+          color: 'var(--text-primary)',
+          background: 'transparent',
+          border: 'none',
+          outline: 'none',
+          fontSize: 24,
+          fontWeight: 700,
+          marginBottom: 16,
+          width: '100%',
+        }}
         placeholder="Untitled"
       />
 
-      {/* ── Toolbar ── */}
-      <div className="flex flex-wrap gap-1 mb-4 items-center p-2 bg-gray-50 border border-gray-200 rounded-lg">
+      {/* Toolbar */}
+      <div
+        className="flex flex-wrap gap-1 mb-4 items-center p-2 rounded-lg"
+        style={{
+          background: 'var(--bg-toolbar)',
+          border: '1px solid var(--border)',
+        }}
+      >
+        {/* Inline formatting */}
+        <button style={{ ...btnStyle(editor.isActive('bold')), fontWeight: 'bold' }}
+          onClick={() => editor.chain().focus().toggleBold().run()}>B</button>
 
-        {/* Row 1 – Inline formatting */}
-        <button onClick={() => editor.chain().focus().toggleBold().run()}
-          className={`${cls(editor.isActive('bold'))} font-bold`}>B</button>
+        <button style={{ ...btnStyle(editor.isActive('italic')), fontStyle: 'italic' }}
+          onClick={() => editor.chain().focus().toggleItalic().run()}>I</button>
 
-        <button onClick={() => editor.chain().focus().toggleItalic().run()}
-          className={`${cls(editor.isActive('italic'))} italic`}>I</button>
-
-        <button onClick={() => editor.chain().focus().toggleUnderline().run()}
-          className={`${cls(editor.isActive('underline'))} underline`}>U</button>
-
-        <Sep />
-
-        {/* Headings */}
-        <button onClick={() => editor.chain().focus().toggleHeading({ level: 1 }).run()}
-          className={cls(editor.isActive('heading', { level: 1 }))}>H1</button>
-
-        <button onClick={() => editor.chain().focus().toggleHeading({ level: 2 }).run()}
-          className={cls(editor.isActive('heading', { level: 2 }))}>H2</button>
-
-        <button onClick={() => editor.chain().focus().toggleBulletList().run()}
-          className={cls(editor.isActive('bulletList'))}>• List</button>
+        <button style={{ ...btnStyle(editor.isActive('underline')), textDecoration: 'underline' }}
+          onClick={() => editor.chain().focus().toggleUnderline().run()}>U</button>
 
         <Sep />
 
-        {/* ── Text alignment ── */}
-        <button onClick={() => editor.chain().focus().setTextAlign('left').run()}
+        {/* Headings + list */}
+        <button style={btnStyle(editor.isActive('heading', { level: 1 }))}
+          onClick={() => editor.chain().focus().toggleHeading({ level: 1 }).run()}>H1</button>
+
+        <button style={btnStyle(editor.isActive('heading', { level: 2 }))}
+          onClick={() => editor.chain().focus().toggleHeading({ level: 2 }).run()}>H2</button>
+
+        <button style={btnStyle(editor.isActive('bulletList'))}
+          onClick={() => editor.chain().focus().toggleBulletList().run()}>• List</button>
+
+        <Sep />
+
+        {/* Alignment */}
+        <button style={btnStyle(editor.isActive({ textAlign: 'left' }))}
           title="Align left"
-          className={cls(editor.isActive({ textAlign: 'left' }))}>
-          ≡←
-        </button>
-        <button onClick={() => editor.chain().focus().setTextAlign('center').run()}
+          onClick={() => editor.chain().focus().setTextAlign('left').run()}>≡←</button>
+
+        <button style={btnStyle(editor.isActive({ textAlign: 'center' }))}
           title="Align center"
-          className={cls(editor.isActive({ textAlign: 'center' }))}>
-          ≡
-        </button>
-        <button onClick={() => editor.chain().focus().setTextAlign('right').run()}
+          onClick={() => editor.chain().focus().setTextAlign('center').run()}>≡</button>
+
+        <button style={btnStyle(editor.isActive({ textAlign: 'right' }))}
           title="Align right"
-          className={cls(editor.isActive({ textAlign: 'right' }))}>
-          →≡
-        </button>
-        <button onClick={() => editor.chain().focus().setTextAlign('justify').run()}
+          onClick={() => editor.chain().focus().setTextAlign('right').run()}>→≡</button>
+
+        <button style={btnStyle(editor.isActive({ textAlign: 'justify' }))}
           title="Justify"
-          className={cls(editor.isActive({ textAlign: 'justify' }))}>
-          ☰
-        </button>
+          onClick={() => editor.chain().focus().setTextAlign('justify').run()}>☰</button>
 
         <Sep />
 
-        {/* ── Font family ── */}
+        {/* Font family */}
         <select
           title="Font family"
+          style={selectStyle}
+          defaultValue=""
           onChange={(e) => {
             const val = e.target.value
             if (val === '') editor.chain().focus().unsetFontFamily().run()
             else editor.chain().focus().setFontFamily(val).run()
           }}
-          className="text-sm border border-gray-300 rounded px-1 py-1 bg-white h-7"
-          defaultValue=""
         >
           {FONT_FAMILIES.map(f => (
             <option key={f.value} value={f.value}>{f.label}</option>
           ))}
         </select>
 
-        {/* ── Font size ── */}
+        {/* Font size */}
         <select
           title="Font size"
+          style={{ ...selectStyle, width: 64 }}
+          defaultValue=""
           onChange={(e) => {
             const val = e.target.value
             if (val === '') editor.chain().focus().unsetFontSize().run()
             else editor.chain().focus().setFontSize(val).run()
           }}
-          className="text-sm border border-gray-300 rounded px-1 py-1 bg-white h-7 w-16"
-          defaultValue=""
         >
           <option value="">Size</option>
           {FONT_SIZES.map(s => (
@@ -254,24 +279,34 @@ function Editor({ docId, onTitleChange }) {
 
         <Sep />
 
-        {/* ── Text color ── */}
+        {/* Text color */}
         <div className="relative" onClick={e => e.stopPropagation()}>
           <button
             title="Text color"
+            style={btnStyle(false)}
             onClick={() => {
               setShowHighlights(false)
               setShowTextColors(v => !v)
             }}
-            className={`${btnBase} ${inactive} flex flex-col items-center gap-0.5`}
           >
-            <span className="text-sm font-bold leading-none">A</span>
-            <span
-              className="h-1 w-5 rounded-sm"
-              style={{ backgroundColor: editor.getAttributes('textStyle').color || '#000' }}
-            />
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
+              <span style={{ fontWeight: 'bold', fontSize: 13, lineHeight: 1 }}>A</span>
+              <span style={{
+                height: 3, width: 18, borderRadius: 2,
+                backgroundColor: editor.getAttributes('textStyle').color || 'var(--text-primary)',
+              }} />
+            </div>
           </button>
           {showTextColors && (
-            <div className="absolute top-9 left-0 z-50 bg-white border border-gray-200 rounded-lg shadow-lg p-2 flex flex-wrap gap-1 w-36">
+            <div
+              className="absolute top-9 left-0 z-50 p-2 flex flex-wrap gap-1 rounded-lg"
+              style={{
+                width: 144,
+                background: 'var(--bg-surface)',
+                border: '1px solid var(--border)',
+                boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
+              }}
+            >
               {TEXT_COLORS.map(color => (
                 <button
                   key={color}
@@ -280,8 +315,12 @@ function Editor({ docId, onTitleChange }) {
                     editor.chain().focus().setColor(color).run()
                     setShowTextColors(false)
                   }}
-                  className="w-6 h-6 rounded-full border border-gray-300 hover:scale-110 transition-transform"
-                  style={{ backgroundColor: color }}
+                  style={{
+                    width: 24, height: 24, borderRadius: '50%',
+                    backgroundColor: color,
+                    border: '1px solid var(--border-btn)',
+                    cursor: 'pointer',
+                  }}
                 />
               ))}
               <button
@@ -289,33 +328,43 @@ function Editor({ docId, onTitleChange }) {
                   editor.chain().focus().unsetColor().run()
                   setShowTextColors(false)
                 }}
-                className="text-xs text-gray-500 underline w-full mt-1">
+                style={{ fontSize: 11, color: 'var(--text-muted)', width: '100%', marginTop: 4, background: 'none', border: 'none', cursor: 'pointer', textDecoration: 'underline' }}
+              >
                 Reset
               </button>
             </div>
           )}
         </div>
 
-        {/* ── Highlight color ── */}
+        {/* Highlight color */}
         <div className="relative" onClick={e => e.stopPropagation()}>
           <button
             title="Highlight"
+            style={btnStyle(false)}
             onClick={() => {
               setShowTextColors(false)
               setShowHighlights(v => !v)
             }}
-            className={`${btnBase} ${inactive} flex flex-col items-center gap-0.5`}
           >
-            <span className="text-sm leading-none">🖊</span>
-            <span
-              className="h-1 w-5 rounded-sm border border-gray-300"
-              style={{
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
+              <span style={{ fontSize: 13, lineHeight: 1 }}>🖊</span>
+              <span style={{
+                height: 3, width: 18, borderRadius: 2,
                 backgroundColor: editor.getAttributes('highlight').color || '#fef08a',
-              }}
-            />
+                border: '1px solid var(--border-btn)',
+              }} />
+            </div>
           </button>
           {showHighlights && (
-            <div className="absolute top-9 left-0 z-50 bg-white border border-gray-200 rounded-lg shadow-lg p-2 flex flex-wrap gap-1 w-36">
+            <div
+              className="absolute top-9 left-0 z-50 p-2 flex flex-wrap gap-1 rounded-lg"
+              style={{
+                width: 144,
+                background: 'var(--bg-surface)',
+                border: '1px solid var(--border)',
+                boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
+              }}
+            >
               {HIGHLIGHT_COLORS.map(color => (
                 <button
                   key={color}
@@ -324,8 +373,12 @@ function Editor({ docId, onTitleChange }) {
                     editor.chain().focus().toggleHighlight({ color }).run()
                     setShowHighlights(false)
                   }}
-                  className="w-6 h-6 rounded-full border border-gray-300 hover:scale-110 transition-transform"
-                  style={{ backgroundColor: color }}
+                  style={{
+                    width: 24, height: 24, borderRadius: '50%',
+                    backgroundColor: color,
+                    border: '1px solid var(--border-btn)',
+                    cursor: 'pointer',
+                  }}
                 />
               ))}
               <button
@@ -333,21 +386,28 @@ function Editor({ docId, onTitleChange }) {
                   editor.chain().focus().unsetHighlight().run()
                   setShowHighlights(false)
                 }}
-                className="text-xs text-gray-500 underline w-full mt-1">
+                style={{ fontSize: 11, color: 'var(--text-muted)', width: '100%', marginTop: 4, background: 'none', border: 'none', cursor: 'pointer', textDecoration: 'underline' }}
+              >
                 Remove
               </button>
             </div>
           )}
         </div>
 
-        {/* Save status pushed to far right */}
-        <span className="ml-auto text-xs text-gray-400">{saveStatus}</span>
+        {/* Save status */}
+        <span
+          className="ml-auto text-xs"
+          style={{ color: 'var(--text-muted)' }}
+        >
+          {saveStatus}
+        </span>
       </div>
 
       {/* Editor content */}
       <EditorContent
         editor={editor}
         className="prose max-w-none focus:outline-none min-h-[400px]"
+        style={{ color: 'var(--text-primary)' }}
       />
     </div>
   )
