@@ -9,6 +9,8 @@ import Highlight from '@tiptap/extension-highlight'
 import FontFamily from '@tiptap/extension-font-family'
 import TextAlign from '@tiptap/extension-text-align'
 import { Mark } from '@tiptap/core'
+import ExportMenu from './ExportMenu'
+
 
 const API = 'http://localhost:3000'
 
@@ -395,11 +397,9 @@ function Editor({ docId, onTitleChange }) {
         </div>
 
         {/* Save status */}
-        <span
-          className="ml-auto text-xs"
-          style={{ color: 'var(--text-muted)' }}
-        >
+        <span className="ml-auto text-xs flex items-center gap-2" style={{ color: 'var(--text-muted)' }}>
           {saveStatus}
+          <ExportMenu editor={editor} title={title} />
         </span>
       </div>
 
