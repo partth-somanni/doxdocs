@@ -1,19 +1,32 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { SignedIn, SignedOut, SignInButton, UserButton } from '@clerk/clerk-react'
 import Editor from './Editor'
 
 const API = 'http://localhost:3000'
 
-function App() {
+export default function App() {
   const [docs, setDocs] = useState([])
   const [activeDocId, setActiveDocId] = useState(null)
   const [dark, setDark] = useState(() => localStorage.getItem('theme') === 'dark')
+  const [sidebarOpen, setSidebarOpen] = useState(true)
 
-  // Apply theme to <html>
+  // Apply theme
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', dark ? 'dark' : 'light')
     localStorage.setItem('theme', dark ? 'dark' : 'light')
   }, [dark])
+
+  // Keyboard shortcut: Ctrl+\ or Cmd+\ to toggle distraction-free
+  useEffect(() => {
+    const handler = (e) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === '\\') {
+        e.preventDefault()
+        setSidebarOpen(v => !v)
+      }
+    }
+    window.addEventListener('keydown', handler)
+    return () => window.removeEventListener('keydown', handler)
+  }, [])
 
   useEffect(() => {
     fetch(`${API}/docs`)
@@ -31,7 +44,7 @@ function App() {
     const res = await fetch(`${API}/docs`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ title: 'Untitled' })
+      body: JSON.stringify({ title: 'Untitled' }),
     })
     const newDoc = await res.json()
     setDocs(prev => [newDoc, ...prev])
@@ -46,8 +59,7 @@ function App() {
 
   const deleteDoc = async (e, id) => {
     e.stopPropagation()
-    const confirmed = window.confirm('Delete this document? This cannot be undone.')
-    if (!confirmed) return
+    if (!window.confirm('Delete this document? This cannot be undone.')) return
     await fetch(`${API}/docs/${id}`, { method: 'DELETE' })
     const remaining = docs.filter(d => d.id !== id)
     setDocs(remaining)
@@ -67,95 +79,113 @@ function App() {
   }
 
   return (
-    <div
-      className="flex h-screen"
-      style={{ background: 'var(--bg-page)', color: 'var(--text-primary)' }}
-    >
-      {/* Sidebar */}
+    <div className="flex h-screen" style={{ background: 'var(--bg-page)', color: 'var(--text-primary)' }}>
+
+      {/* ── Sidebar ─────────────────────────────────────────────────── */}
       <div
-        className="w-64 border-r p-4 flex flex-col"
         style={{
+          width: sidebarOpen ? 256 : 0,
+          minWidth: sidebarOpen ? 256 : 0,
+          overflow: 'hidden',
+          transition: 'width 0.22s cubic-bezier(.4,0,.2,1), min-width 0.22s cubic-bezier(.4,0,.2,1)',
           background: 'var(--bg-sidebar)',
-          borderColor: 'var(--border)',
+          borderRight: sidebarOpen ? '1px solid var(--border)' : 'none',
+          display: 'flex',
+          flexDirection: 'column',
         }}
       >
-        <div className="flex justify-between items-center mb-4">
-          <h2 className="text-lg font-semibold" style={{ color: 'var(--text-primary)' }}>
-            My Documents
-          </h2>
-          <button
-            onClick={createDoc}
-            className="text-xl font-bold"
-            style={{ color: 'var(--text-active)' }}
-            title="New document"
-          >
-            +
-          </button>
-        </div>
-
-        {docs.length === 0 ? (
-          <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
-            No documents yet. Click + to create one.
-          </p>
-        ) : (
-          <div className="flex flex-col gap-1 overflow-y-auto">
-            {docs.map(doc => (
-              <div
-                key={doc.id}
-                onClick={() => openDoc(doc.id)}
-                className="group flex justify-between items-center px-3 py-2 rounded cursor-pointer text-sm"
-                style={{
-                  background: activeDocId === doc.id ? 'var(--bg-active)' : 'transparent',
-                  color: activeDocId === doc.id ? 'var(--text-active)' : 'var(--text-secondary)',
-                  fontWeight: activeDocId === doc.id ? 500 : 400,
-                }}
-                onMouseEnter={e => {
-                  if (activeDocId !== doc.id)
-                    e.currentTarget.style.background = 'var(--bg-toolbar)'
-                }}
-                onMouseLeave={e => {
-                  if (activeDocId !== doc.id)
-                    e.currentTarget.style.background = 'transparent'
-                }}
+        {/* Sidebar inner — kept at 256px so content doesn't squish during animation */}
+        <div style={{ width: 256, flex: 1, display: 'flex', flexDirection: 'column', padding: 16 }}>
+          {/* Header row */}
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+            <h2 style={{ fontSize: 15, fontWeight: 600, color: 'var(--text-primary)', margin: 0 }}>
+              My Documents
+            </h2>
+            <div style={{ display: 'flex', gap: 4 }}>
+              {/* New doc */}
+              <button
+                onClick={createDoc}
+                title="New document"
+                style={iconBtnStyle}
               >
-                <span className="truncate flex-1">{doc.title || 'Untitled'}</span>
-                <button
-                  onClick={(e) => deleteDoc(e, doc.id)}
-                  className="hidden group-hover:block text-lg leading-none ml-2"
-                  style={{ color: '#ef4444' }}
-                  title="Delete document"
-                >
-                  ×
-                </button>
-              </div>
-            ))}
+                +
+              </button>
+              {/* Collapse sidebar */}
+              <button
+                onClick={() => setSidebarOpen(false)}
+                title="Focus mode  (Ctrl+\\)"
+                style={iconBtnStyle}
+              >
+                ◀
+              </button>
+            </div>
           </div>
-        )}
+
+          {/* Doc list */}
+          {docs.length === 0 ? (
+            <p style={{ fontSize: 13, color: 'var(--text-muted)' }}>
+              No documents yet. Click + to create one.
+            </p>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 2, overflowY: 'auto', flex: 1 }}>
+              {docs.map(doc => (
+                <DocItem
+                  key={doc.id}
+                  doc={doc}
+                  active={activeDocId === doc.id}
+                  onOpen={() => openDoc(doc.id)}
+                  onDelete={(e) => deleteDoc(e, doc.id)}
+                />
+              ))}
+            </div>
+          )}
+        </div>
       </div>
 
-      {/* Main area */}
-      <div className="flex-1 flex flex-col">
+      {/* ── Main ────────────────────────────────────────────────────── */}
+      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0 }}>
+
         {/* Navbar */}
         <div
-          className="border-b px-6 py-3 flex justify-between items-center"
           style={{
             background: 'var(--bg-sidebar)',
-            borderColor: 'var(--border)',
+            borderBottom: '1px solid var(--border)',
             boxShadow: 'var(--shadow)',
+            padding: '10px 24px',
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            gap: 12,
           }}
         >
-          <h1 className="text-xl font-medium" style={{ color: 'var(--text-primary)' }}>
-            {docs.find(d => d.id === activeDocId)?.title || 'Untitled Document'}
-          </h1>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            {/* Show sidebar button — only visible when sidebar is hidden */}
+            {!sidebarOpen && (
+              <button
+                onClick={() => setSidebarOpen(true)}
+                title="Show sidebar  (Ctrl+\\)"
+                style={{
+                  ...iconBtnStyle,
+                  fontSize: 16,
+                  opacity: 1,
+                }}
+              >
+                ▶
+              </button>
+            )}
+            <h1 style={{ fontSize: 17, fontWeight: 500, color: 'var(--text-primary)', margin: 0 }}>
+              {docs.find(d => d.id === activeDocId)?.title || 'Untitled Document'}
+            </h1>
+          </div>
 
-          <div className="flex items-center gap-3">
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
             {/* Dark mode toggle */}
             <button
               onClick={() => setDark(d => !d)}
               title={dark ? 'Switch to light mode' : 'Switch to dark mode'}
               style={{
-                width: 36,
-                height: 36,
+                width: 34,
+                height: 34,
                 borderRadius: 8,
                 border: '1px solid var(--border-btn)',
                 background: 'var(--bg-btn)',
@@ -164,8 +194,7 @@ function App() {
                 alignItems: 'center',
                 justifyContent: 'center',
                 cursor: 'pointer',
-                fontSize: 18,
-                transition: 'background 0.15s',
+                fontSize: 16,
               }}
             >
               {dark ? '☀' : '☾'}
@@ -174,13 +203,7 @@ function App() {
             <SignedIn><UserButton /></SignedIn>
             <SignedOut>
               <SignInButton mode="modal">
-                <button
-                  className="px-4 py-1 rounded text-sm"
-                  style={{
-                    background: '#2563eb',
-                    color: '#ffffff',
-                  }}
-                >
+                <button style={{ padding: '5px 14px', borderRadius: 6, background: '#2563eb', color: '#fff', fontSize: 13, border: 'none', cursor: 'pointer' }}>
                   Sign In
                 </button>
               </SignInButton>
@@ -190,29 +213,96 @@ function App() {
 
         {/* Editor area */}
         <div
-          className="flex-1 p-10 m-6 rounded overflow-auto"
           style={{
-            background: 'var(--bg-surface)',
-            boxShadow: 'var(--shadow)',
+            flex: 1,
+            padding: 24,
+            overflowY: 'auto',
           }}
         >
-          <SignedIn>
-            {activeDocId
-              ? <Editor key={activeDocId} docId={activeDocId} onTitleChange={updateDocTitle} />
-              : <p className="text-center mt-20" style={{ color: 'var(--text-muted)' }}>
-                  Click + to create a new document.
-                </p>
-            }
-          </SignedIn>
-          <SignedOut>
-            <p className="text-center mt-20" style={{ color: 'var(--text-muted)' }}>
-              Please sign in to edit documents.
-            </p>
-          </SignedOut>
+          <div
+            style={{
+              background: 'var(--bg-surface)',
+              boxShadow: 'var(--shadow)',
+              borderRadius: 8,
+              padding: '40px 48px',
+              maxWidth: sidebarOpen ? 860 : 780,
+              margin: '0 auto',
+              transition: 'max-width 0.22s cubic-bezier(.4,0,.2,1)',
+            }}
+          >
+            <SignedIn>
+              {activeDocId
+                ? <Editor key={activeDocId} docId={activeDocId} onTitleChange={updateDocTitle} />
+                : <p style={{ textAlign: 'center', marginTop: 80, color: 'var(--text-muted)' }}>
+                    Click + to create a new document.
+                  </p>
+              }
+            </SignedIn>
+            <SignedOut>
+              <p style={{ textAlign: 'center', marginTop: 80, color: 'var(--text-muted)' }}>
+                Please sign in to edit documents.
+              </p>
+            </SignedOut>
+          </div>
         </div>
       </div>
     </div>
   )
 }
 
-export default App
+// ── Sub-components ──────────────────────────────────────────────────────────
+
+function DocItem({ doc, active, onOpen, onDelete }) {
+  const [hovered, setHovered] = useState(false)
+  return (
+    <div
+      onClick={onOpen}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+      style={{
+        display: 'flex',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        padding: '7px 10px',
+        borderRadius: 6,
+        cursor: 'pointer',
+        background: active ? 'var(--bg-active)' : hovered ? 'var(--bg-toolbar)' : 'transparent',
+        color: active ? 'var(--text-active)' : 'var(--text-secondary)',
+        fontWeight: active ? 500 : 400,
+        fontSize: 13,
+        transition: 'background 0.12s',
+      }}
+    >
+      <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+        {doc.title || 'Untitled'}
+      </span>
+      {hovered && (
+        <button
+          onClick={onDelete}
+          title="Delete document"
+          style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#ef4444', fontSize: 16, lineHeight: 1, padding: '0 2px', marginLeft: 6 }}
+        >
+          ×
+        </button>
+      )}
+    </div>
+  )
+}
+
+// ── Shared style ────────────────────────────────────────────────────────────
+
+const iconBtnStyle = {
+  width: 28,
+  height: 28,
+  borderRadius: 6,
+  border: '1px solid var(--border-btn)',
+  background: 'var(--bg-btn)',
+  color: 'var(--text-secondary)',
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  cursor: 'pointer',
+  fontSize: 13,
+  fontWeight: 600,
+  lineHeight: 1,
+}
