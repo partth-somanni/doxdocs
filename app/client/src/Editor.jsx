@@ -8,43 +8,122 @@ import { TextStyle } from '@tiptap/extension-text-style'
 import Highlight from '@tiptap/extension-highlight'
 import FontFamily from '@tiptap/extension-font-family'
 import TextAlign from '@tiptap/extension-text-align'
-import { Mark } from '@tiptap/core'
-import ExportMenu from './ExportMenu'
-
+import TiptapImage from '@tiptap/extension-image'
+import { Mark, Node, mergeAttributes } from '@tiptap/core'
+import MediaModal from './MediaModal'
 
 const API = 'http://localhost:3000'
 
+// ── FontSize mark ────────────────────────────────────────────────────────
+
 const FontSize = Mark.create({
   name: 'fontSize',
-  addOptions() {
-    return { types: ['textStyle'] }
-  },
+  addOptions() { return { types: ['textStyle'] } },
   addGlobalAttributes() {
-    return [
-      {
-        types: ['textStyle'],
-        attributes: {
-          fontSize: {
-            default: null,
-            parseHTML: el => el.style.fontSize?.replace('px', '') || null,
-            renderHTML: attrs => {
-              if (!attrs.fontSize) return {}
-              return { style: `font-size: ${attrs.fontSize}px` }
-            },
+    return [{
+      types: ['textStyle'],
+      attributes: {
+        fontSize: {
+          default: null,
+          parseHTML: el => el.style.fontSize?.replace('px', '') || null,
+          renderHTML: attrs => {
+            if (!attrs.fontSize) return {}
+            return { style: `font-size: ${attrs.fontSize}px` }
           },
         },
       },
-    ]
+    }]
   },
   addCommands() {
     return {
-      setFontSize: size => ({ chain }) =>
-        chain().setMark('textStyle', { fontSize: size }).run(),
-      unsetFontSize: () => ({ chain }) =>
-        chain().setMark('textStyle', { fontSize: null }).removeEmptyTextStyle().run(),
+      setFontSize: size => ({ chain }) => chain().setMark('textStyle', { fontSize: size }).run(),
+      unsetFontSize: () => ({ chain }) => chain().setMark('textStyle', { fontSize: null }).removeEmptyTextStyle().run(),
     }
   },
 })
+
+// ── ResizableImage extension ─────────────────────────────────────────────
+// Wraps the built-in Image node with width/style support
+
+const ResizableImage = TiptapImage.extend({
+  addAttributes() {
+    return {
+      ...this.parent?.(),
+      width: {
+        default: '100%',
+        parseHTML: el => el.style.width || el.getAttribute('width') || '100%',
+        renderHTML: attrs => ({ style: `width: ${attrs.width}; max-width: 100%; display: block; border-radius: 6px; margin: 8px 0;` }),
+      },
+      alt: { default: '' },
+    }
+  },
+})
+
+// ── Video embed node ─────────────────────────────────────────────────────
+
+const VideoEmbed = Node.create({
+  name: 'videoEmbed',
+  group: 'block',
+  atom: true,
+
+  addAttributes() {
+    return {
+      src: { default: null },
+    }
+  },
+
+  parseHTML() {
+    return [{ tag: 'div[data-video-embed]' }]
+  },
+
+renderHTML({ node }) {
+  return [
+    'div',
+    {
+      'data-video-embed': '',
+      src: node.attrs.src,
+    },
+  ]
+},
+
+addNodeView() {
+  return ({ node }) => {
+    const wrapper = document.createElement('div')
+    const src = node.attrs.src || ''
+    const isSpotify = src.includes('open.spotify.com/embed')
+
+    wrapper.style.cssText = isSpotify
+      ? 'margin:12px 0;border-radius:8px;overflow:hidden;'
+      : 'position:relative;padding-top:56.25%;margin:12px 0;border-radius:8px;overflow:hidden;background:#000'
+
+    const isEmbed =
+        src.includes('youtube.com/embed') ||
+        src.includes('player.vimeo.com') ||
+        src.includes('open.spotify.com/embed')
+
+    if (isEmbed) {
+      const iframe = document.createElement('iframe')
+      iframe.src = src
+      iframe.allow = 'accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture'
+      iframe.allowFullscreen = true
+      iframe.style.cssText = isSpotify
+        ? 'width:100%;height:152px;border:none;'
+        : 'position:absolute;inset:0;width:100%;height:100%;border:none'
+      wrapper.appendChild(iframe)
+    } else {
+      const video = document.createElement('video')
+      video.src = src
+      video.controls = true
+      video.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;object-fit:contain'
+      wrapper.appendChild(video)
+    }
+
+    return { dom: wrapper }
+  }
+},
+})
+
+// ── Constants ────────────────────────────────────────────────────────────
 
 const FONT_FAMILIES = [
   { label: 'Default', value: '' },
@@ -68,26 +147,21 @@ const HIGHLIGHT_COLORS = [
 
 function debounce(fn, delay) {
   let timer
-  return (...args) => {
-    clearTimeout(timer)
-    timer = setTimeout(() => fn(...args), delay)
-  }
+  return (...args) => { clearTimeout(timer); timer = setTimeout(() => fn(...args), delay) }
 }
 
 function Sep() {
-  return (
-    <div
-      className="mx-1 self-center"
-      style={{ width: 1, height: 24, background: 'var(--border)' }}
-    />
-  )
+  return <div className="mx-1 self-center" style={{ width: 1, height: 24, background: 'var(--border)' }} />
 }
 
-function Editor({ docId, onTitleChange }) {
+// ── Editor component ─────────────────────────────────────────────────────
+
+export default function Editor({ docId, onTitleChange }) {
   const [title, setTitle] = useState('Untitled')
   const [saveStatus, setSaveStatus] = useState('All changes saved')
   const [showTextColors, setShowTextColors] = useState(false)
   const [showHighlights, setShowHighlights] = useState(false)
+  const [mediaModal, setMediaModal] = useState(null) // null | 'image' | 'video'
 
   const editor = useEditor({
     extensions: [
@@ -97,11 +171,11 @@ function Editor({ docId, onTitleChange }) {
       Color,
       FontSize,
       FontFamily,
+      ResizableImage.configure({ inline: false, allowBase64: true }),
+      VideoEmbed,
       Highlight.configure({ multicolor: true }),
       TextAlign.configure({ types: ['heading', 'paragraph'] }),
-      Placeholder.configure({
-        placeholder: 'Start typing your document here...',
-      }),
+      Placeholder.configure({ placeholder: 'Start typing your document here...' }),
     ],
     content: '',
   })
@@ -131,23 +205,40 @@ function Editor({ docId, onTitleChange }) {
 
   useEffect(() => {
     if (!editor || !docId) return
-    editor.on('update', () => {
-      saveDoc(docId, editor.getHTML(), title)
-    })
+    editor.on('update', () => { saveDoc(docId, editor.getHTML(), title) })
   }, [editor, docId, title, saveDoc])
 
   useEffect(() => {
-    const close = () => {
-      setShowTextColors(false)
-      setShowHighlights(false)
-    }
+    const close = () => { setShowTextColors(false); setShowHighlights(false) }
     document.addEventListener('click', close)
     return () => document.removeEventListener('click', close)
   }, [])
 
   if (!editor) return null
 
-  // Button style helpers
+  // ── Insert handlers ────────────────────────────────────────────────────
+
+  function insertImage({ src, alt, width }) {
+    editor.chain().focus().setImage({
+      src,
+      alt: alt || '',
+      width: `${width}%`,
+    }).run()
+  }
+
+  function insertVideo({ src }) {
+    console.log("Inserting:", src)
+
+    editor.chain().focus().insertContent({
+      type: 'videoEmbed',
+      attrs: { src },
+    }).run()
+
+    console.log(editor.getJSON())
+  }
+
+  // ── Style helpers ──────────────────────────────────────────────────────
+
   const btnStyle = (isActive) => ({
     padding: '2px 8px',
     borderRadius: 6,
@@ -159,14 +250,11 @@ function Editor({ docId, onTitleChange }) {
   })
 
   const selectStyle = {
-    fontSize: 13,
-    borderRadius: 6,
+    fontSize: 13, borderRadius: 6,
     border: '1px solid var(--border-btn)',
     background: 'var(--bg-btn)',
     color: 'var(--text-primary)',
-    padding: '2px 4px',
-    height: 28,
-    cursor: 'pointer',
+    padding: '2px 4px', height: 28, cursor: 'pointer',
   }
 
   return (
@@ -183,25 +271,17 @@ function Editor({ docId, onTitleChange }) {
           if (docId) saveDoc(docId, editor.getHTML(), e.target.value)
         }}
         style={{
-          color: 'var(--text-primary)',
-          background: 'transparent',
-          border: 'none',
-          outline: 'none',
-          fontSize: 24,
-          fontWeight: 700,
-          marginBottom: 16,
-          width: '100%',
+          color: 'var(--text-primary)', background: 'transparent',
+          border: 'none', outline: 'none',
+          fontSize: 24, fontWeight: 700, marginBottom: 16, width: '100%',
         }}
         placeholder="Untitled"
       />
 
-      {/* Toolbar */}
+      {/* ── Toolbar ───────────────────────────────────────────────────── */}
       <div
         className="flex flex-wrap gap-1 mb-4 items-center p-2 rounded-lg"
-        style={{
-          background: 'var(--bg-toolbar)',
-          border: '1px solid var(--border)',
-        }}
+        style={{ background: 'var(--bg-toolbar)', border: '1px solid var(--border)' }}
       >
         {/* Inline formatting */}
         <button style={{ ...btnStyle(editor.isActive('bold')), fontWeight: 'bold' }}
@@ -247,26 +327,18 @@ function Editor({ docId, onTitleChange }) {
         <Sep />
 
         {/* Font family */}
-        <select
-          title="Font family"
-          style={selectStyle}
-          defaultValue=""
+        <select title="Font family" style={selectStyle} defaultValue=""
           onChange={(e) => {
             const val = e.target.value
             if (val === '') editor.chain().focus().unsetFontFamily().run()
             else editor.chain().focus().setFontFamily(val).run()
           }}
         >
-          {FONT_FAMILIES.map(f => (
-            <option key={f.value} value={f.value}>{f.label}</option>
-          ))}
+          {FONT_FAMILIES.map(f => <option key={f.value} value={f.value}>{f.label}</option>)}
         </select>
 
         {/* Font size */}
-        <select
-          title="Font size"
-          style={{ ...selectStyle, width: 64 }}
-          defaultValue=""
+        <select title="Font size" style={{ ...selectStyle, width: 64 }} defaultValue=""
           onChange={(e) => {
             const val = e.target.value
             if (val === '') editor.chain().focus().unsetFontSize().run()
@@ -274,132 +346,86 @@ function Editor({ docId, onTitleChange }) {
           }}
         >
           <option value="">Size</option>
-          {FONT_SIZES.map(s => (
-            <option key={s} value={s}>{s}</option>
-          ))}
+          {FONT_SIZES.map(s => <option key={s} value={s}>{s}</option>)}
         </select>
 
         <Sep />
 
         {/* Text color */}
         <div className="relative" onClick={e => e.stopPropagation()}>
-          <button
-            title="Text color"
-            style={btnStyle(false)}
-            onClick={() => {
-              setShowHighlights(false)
-              setShowTextColors(v => !v)
-            }}
+          <button title="Text color" style={btnStyle(false)}
+            onClick={() => { setShowHighlights(false); setShowTextColors(v => !v) }}
           >
             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
               <span style={{ fontWeight: 'bold', fontSize: 13, lineHeight: 1 }}>A</span>
-              <span style={{
-                height: 3, width: 18, borderRadius: 2,
-                backgroundColor: editor.getAttributes('textStyle').color || 'var(--text-primary)',
-              }} />
+              <span style={{ height: 3, width: 18, borderRadius: 2, backgroundColor: editor.getAttributes('textStyle').color || 'var(--text-primary)' }} />
             </div>
           </button>
           {showTextColors && (
-            <div
-              className="absolute top-9 left-0 z-50 p-2 flex flex-wrap gap-1 rounded-lg"
-              style={{
-                width: 144,
-                background: 'var(--bg-surface)',
-                border: '1px solid var(--border)',
-                boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
-              }}
-            >
+            <div className="absolute top-9 left-0 z-50 p-2 flex flex-wrap gap-1 rounded-lg"
+              style={{ width: 144, background: 'var(--bg-surface)', border: '1px solid var(--border)', boxShadow: '0 4px 12px rgba(0,0,0,0.15)' }}>
               {TEXT_COLORS.map(color => (
-                <button
-                  key={color}
-                  title={color}
-                  onClick={() => {
-                    editor.chain().focus().setColor(color).run()
-                    setShowTextColors(false)
-                  }}
-                  style={{
-                    width: 24, height: 24, borderRadius: '50%',
-                    backgroundColor: color,
-                    border: '1px solid var(--border-btn)',
-                    cursor: 'pointer',
-                  }}
-                />
+                <button key={color} title={color}
+                  onClick={() => { editor.chain().focus().setColor(color).run(); setShowTextColors(false) }}
+                  style={{ width: 24, height: 24, borderRadius: '50%', backgroundColor: color, border: '1px solid var(--border-btn)', cursor: 'pointer' }} />
               ))}
-              <button
-                onClick={() => {
-                  editor.chain().focus().unsetColor().run()
-                  setShowTextColors(false)
-                }}
-                style={{ fontSize: 11, color: 'var(--text-muted)', width: '100%', marginTop: 4, background: 'none', border: 'none', cursor: 'pointer', textDecoration: 'underline' }}
-              >
+              <button onClick={() => { editor.chain().focus().unsetColor().run(); setShowTextColors(false) }}
+                style={{ fontSize: 11, color: 'var(--text-muted)', width: '100%', marginTop: 4, background: 'none', border: 'none', cursor: 'pointer', textDecoration: 'underline' }}>
                 Reset
               </button>
             </div>
           )}
         </div>
 
-        {/* Highlight color */}
+        {/* Highlight */}
         <div className="relative" onClick={e => e.stopPropagation()}>
-          <button
-            title="Highlight"
-            style={btnStyle(false)}
-            onClick={() => {
-              setShowTextColors(false)
-              setShowHighlights(v => !v)
-            }}
+          <button title="Highlight" style={btnStyle(false)}
+            onClick={() => { setShowTextColors(false); setShowHighlights(v => !v) }}
           >
             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
               <span style={{ fontSize: 13, lineHeight: 1 }}>🖊</span>
-              <span style={{
-                height: 3, width: 18, borderRadius: 2,
-                backgroundColor: editor.getAttributes('highlight').color || '#fef08a',
-                border: '1px solid var(--border-btn)',
-              }} />
+              <span style={{ height: 3, width: 18, borderRadius: 2, backgroundColor: editor.getAttributes('highlight').color || '#fef08a', border: '1px solid var(--border-btn)' }} />
             </div>
           </button>
           {showHighlights && (
-            <div
-              className="absolute top-9 left-0 z-50 p-2 flex flex-wrap gap-1 rounded-lg"
-              style={{
-                width: 144,
-                background: 'var(--bg-surface)',
-                border: '1px solid var(--border)',
-                boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
-              }}
-            >
+            <div className="absolute top-9 left-0 z-50 p-2 flex flex-wrap gap-1 rounded-lg"
+              style={{ width: 144, background: 'var(--bg-surface)', border: '1px solid var(--border)', boxShadow: '0 4px 12px rgba(0,0,0,0.15)' }}>
               {HIGHLIGHT_COLORS.map(color => (
-                <button
-                  key={color}
-                  title={color}
-                  onClick={() => {
-                    editor.chain().focus().toggleHighlight({ color }).run()
-                    setShowHighlights(false)
-                  }}
-                  style={{
-                    width: 24, height: 24, borderRadius: '50%',
-                    backgroundColor: color,
-                    border: '1px solid var(--border-btn)',
-                    cursor: 'pointer',
-                  }}
-                />
+                <button key={color} title={color}
+                  onClick={() => { editor.chain().focus().toggleHighlight({ color }).run(); setShowHighlights(false) }}
+                  style={{ width: 24, height: 24, borderRadius: '50%', backgroundColor: color, border: '1px solid var(--border-btn)', cursor: 'pointer' }} />
               ))}
-              <button
-                onClick={() => {
-                  editor.chain().focus().unsetHighlight().run()
-                  setShowHighlights(false)
-                }}
-                style={{ fontSize: 11, color: 'var(--text-muted)', width: '100%', marginTop: 4, background: 'none', border: 'none', cursor: 'pointer', textDecoration: 'underline' }}
-              >
+              <button onClick={() => { editor.chain().focus().unsetHighlight().run(); setShowHighlights(false) }}
+                style={{ fontSize: 11, color: 'var(--text-muted)', width: '100%', marginTop: 4, background: 'none', border: 'none', cursor: 'pointer', textDecoration: 'underline' }}>
                 Remove
               </button>
             </div>
           )}
         </div>
 
+        <Sep />
+
+        {/* ── Image button ── */}
+        <button
+          title="Insert image"
+          style={btnStyle(false)}
+          onClick={() => setMediaModal('image')}
+        >
+          🖼
+        </button>
+
+        {/* ── Video button ── */}
+        <button
+          title="Embed video"
+          style={btnStyle(false)}
+          onClick={() => setMediaModal('video')}
+        >
+          ▶
+        </button>
+
         {/* Save status */}
-        <span className="ml-auto text-xs flex items-center gap-2" style={{ color: 'var(--text-muted)' }}>
+        <span className="ml-auto text-xs" style={{ color: 'var(--text-muted)' }}>
           {saveStatus}
-          <ExportMenu editor={editor} title={title} />
         </span>
       </div>
 
@@ -409,8 +435,16 @@ function Editor({ docId, onTitleChange }) {
         className="prose max-w-none focus:outline-none min-h-[400px]"
         style={{ color: 'var(--text-primary)' }}
       />
+
+      {/* Media modal */}
+      {mediaModal && (
+        <MediaModal
+          type={mediaModal}
+          onInsert={mediaModal === 'image' ? insertImage : insertVideo}
+          onClose={() => setMediaModal(null)}
+        />
+      )}
     </div>
   )
 }
 
-export default Editor
