@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { useEditor, EditorContent } from '@tiptap/react'
 import StarterKit from '@tiptap/starter-kit'
 import Underline from '@tiptap/extension-underline'
+import Placeholder from '@tiptap/extension-placeholder'
 
 const API = 'http://localhost:3000'
 
@@ -17,10 +18,16 @@ function Editor({ docId, onTitleChange }) {
   const [title, setTitle] = useState('Untitled')
   const [saveStatus, setSaveStatus] = useState('All changes saved')
 
-  const editor = useEditor({
-    extensions: [StarterKit, Underline],
-    content: '<p>Start typing your document here...</p>',
-  })
+const editor = useEditor({
+  extensions: [
+    StarterKit,
+    Underline,
+    Placeholder.configure({
+      placeholder: 'Start typing your document here...',
+    }),
+  ],
+  content: '', // empty instead of hardcoded text
+})
 
   // Auto save function
   const saveDoc = useCallback(
@@ -63,11 +70,17 @@ useEffect(() => {
       <input
         type="text"
         value={title}
+        onFocus={() => {
+          if (title === 'Untitled') setTitle('')
+        }}
+        onBlur={() => {
+          if (title.trim() === '') setTitle('Untitled')
+        }}
         onChange={(e) => {
-  setTitle(e.target.value)
-  onTitleChange(docId, e.target.value)  // ← add this line
-  if (docId) saveDoc(docId, editor.getHTML(), e.target.value)
-}}
+          setTitle(e.target.value)
+          onTitleChange(docId, e.target.value)
+          if (docId) saveDoc(docId, editor.getHTML(), e.target.value)
+        }}
         className="text-2xl font-bold border-none outline-none mb-4 w-full"
         placeholder="Untitled"
       />
