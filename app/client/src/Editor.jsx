@@ -229,6 +229,10 @@ function Sep() {
   return <div className="mx-1 self-center" style={{ width: 1, height: 24, background: 'var(--border)' }} />
 }
 
+// ── ADDED: helper to count words from plain text ─────────────────────────
+function countWords(text) {
+  return text.trim() === '' ? 0 : text.trim().split(/\s+/).length
+}
 // ── Editor component ─────────────────────────────────────────────────────
 
 export default function Editor({ docId, onTitleChange, username }) {
@@ -239,6 +243,7 @@ export default function Editor({ docId, onTitleChange, username }) {
   const [mediaModal, setMediaModal] = useState(null) // null | 'image' | 'video'
   const [collaborators, setCollaborators] = useState([])
   const [remoteCursors, setRemoteCursors] = useState({})
+  const [wordCount, setWordCount] = useState(0) // ── ADDED
   const socketRef = useRef(null)
   const isRemoteUpdate = useRef(false)
 
@@ -261,6 +266,10 @@ export default function Editor({ docId, onTitleChange, username }) {
     onTransaction: () => {
       forceUpdate(n => n + 1)
     },
+     // ── ADDED: update word count on every content change
+    onUpdate: ({ editor }) => {
+      setWordCount(countWords(editor.getText()))
+    },
   })
 
   const saveDoc = useCallback(
@@ -282,7 +291,12 @@ export default function Editor({ docId, onTitleChange, username }) {
       .then(r => r.json())
       .then(data => {
         setTitle(data.title || 'Untitled')
-        if (data.content) editor.commands.setContent(data.content)
+        if (data.content) {
+          editor.commands.setContent(data.content)
+          // ── ADDED: set initial word count after loading saved content
+          setWordCount(countWords(editor.getText()))
+        }
+          
       })
   }, [editor, docId])
 
@@ -324,6 +338,8 @@ export default function Editor({ docId, onTitleChange, username }) {
       editor.commands.setContent(content, false)
       editor.commands.setTextSelection({ from, to })
       isRemoteUpdate.current = false
+      // ── ADDED: update word count when a collaborator makes changes
+      setWordCount(countWords(editor.getText()))
     })
 
     socket.on('presence', (users) => {
@@ -606,6 +622,21 @@ export default function Editor({ docId, onTitleChange, username }) {
           style={{ color: 'var(--text-primary)' }}
         />
       </div>
+
+      {/* ── ADDED: Word count bar ─────────────────────────────────────── */}
+      <div style={{
+        marginTop: 12,
+        paddingTop: 8,
+        borderTop: '1px solid var(--border)',
+        display: 'flex',
+        justifyContent: 'flex-end',
+        alignItems: 'center',
+      }}>
+        <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>
+          {wordCount} {wordCount === 1 ? 'word' : 'words'}
+        </span>
+      </div>
+
 
       {/* Media modal */}
       {mediaModal && (
