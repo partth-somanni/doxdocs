@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { useEditor, EditorContent } from '@tiptap/react'
 import StarterKit from '@tiptap/starter-kit'
 import Underline from '@tiptap/extension-underline'
@@ -11,6 +11,7 @@ import TextAlign from '@tiptap/extension-text-align'
 import TiptapImage from '@tiptap/extension-image'
 import { Mark, Node, mergeAttributes } from '@tiptap/core'
 import MediaModal from './MediaModal'
+import { io } from 'socket.io-client'
 
 const API = 'http://localhost:3000'
 
@@ -156,12 +157,16 @@ function Sep() {
 
 // ── Editor component ─────────────────────────────────────────────────────
 
-export default function Editor({ docId, onTitleChange }) {
+export default function Editor({ docId, onTitleChange, username }) {
   const [title, setTitle] = useState('Untitled')
   const [saveStatus, setSaveStatus] = useState('All changes saved')
   const [showTextColors, setShowTextColors] = useState(false)
   const [showHighlights, setShowHighlights] = useState(false)
   const [mediaModal, setMediaModal] = useState(null) // null | 'image' | 'video'
+  const [collaborators, setCollaborators] = useState([])
+  const [remoteCursors, setRemoteCursors] = useState({})
+  const socketRef = useRef(null)
+  const isRemoteUpdate = useRef(false)
 
   const editor = useEditor({
     extensions: [
@@ -204,9 +209,62 @@ export default function Editor({ docId, onTitleChange }) {
   }, [editor, docId])
 
   useEffect(() => {
-    if (!editor || !docId) return
-    editor.on('update', () => { saveDoc(docId, editor.getHTML(), title) })
-  }, [editor, docId, title, saveDoc])
+  if (!editor || !docId) return
+  const handler = () => {
+    if (isRemoteUpdate.current) return
+    const content = editor.getHTML()
+    saveDoc(docId, content, title)
+    socketRef.current?.emit('doc-change', { docId, content })
+  }
+  editor.on('update', handler)
+  return () => editor.off('update', handler)
+}, [editor, docId, title, saveDoc])
+
+useEffect(() => {
+  if (!editor || !socketRef.current) return
+  const handler = () => {
+    const { from } = editor.state.selection
+    const color = collaborators.find(u => u.name === username)?.color || '#60a5fa'
+    socketRef.current?.emit('cursor-move', { docId, position: from, username, color })
+  }
+  editor.on('selectionUpdate', handler)
+  return () => editor.off('selectionUpdate', handler)
+}, [editor, docId, username])
+
+useEffect(() => {
+  if (!docId || !username) return
+
+  const socket = io('http://localhost:3000')
+  socketRef.current = socket
+
+  socket.emit('join-doc', { docId, username })
+
+  socket.on('doc-update', ({ content }) => {
+    if (!editor) return
+    isRemoteUpdate.current = true
+    const { from, to } = editor.state.selection
+    editor.commands.setContent(content, false)
+    editor.commands.setTextSelection({ from, to })
+    isRemoteUpdate.current = false
+  })
+
+  socket.on('presence', (users) => {
+  setCollaborators(users.filter(u => u.name !== username))
+  // Remove cursors for users who left
+  setRemoteCursors(prev => {
+    const active = new Set(users.map(u => u.name))
+    return Object.fromEntries(
+      Object.entries(prev).filter(([, c]) => active.has(c.username))
+    )
+  })
+})
+
+  socket.on('cursor-update', ({ socketId, position, username: uname, color }) => {
+  setRemoteCursors(prev => ({ [socketId]: { position, username: uname, color } }))
+})
+
+  return () => socket.disconnect()
+}, [docId, username, editor])
 
   useEffect(() => {
     const close = () => { setShowTextColors(false); setShowHighlights(false) }
@@ -277,6 +335,25 @@ export default function Editor({ docId, onTitleChange }) {
         }}
         placeholder="Untitled"
       />
+
+      {collaborators.length > 0 && (
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 12 }}>
+          <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>Also editing:</span>
+          {collaborators.map((user, i) => (
+            <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+              <div style={{
+                width: 22, height: 22, borderRadius: '50%',
+                background: user.color, color: '#fff',
+                fontSize: 11, fontWeight: 700,
+                display: 'flex', alignItems: 'center', justifyContent: 'center'
+              }}>
+                {user.name?.[0]?.toUpperCase() || '?'}
+              </div>
+              <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>{user.name}</span>
+            </div>
+          ))}
+        </div>
+      )}
 
       {/* ── Toolbar ───────────────────────────────────────────────────── */}
       <div
@@ -430,11 +507,40 @@ export default function Editor({ docId, onTitleChange }) {
       </div>
 
       {/* Editor content */}
-      <EditorContent
-        editor={editor}
-        className="prose max-w-none focus:outline-none min-h-[400px]"
-        style={{ color: 'var(--text-primary)' }}
-      />
+      <div style={{ position: 'relative' }}>
+  {Object.entries(remoteCursors).map(([id, cursor]) => {
+    try {
+      const pos = editor.view.coordsAtPos(cursor.position)
+      const editorRect = editor.view.dom.getBoundingClientRect()
+      return (
+        <div key={id} style={{
+          position: 'fixed',
+          left: pos.left,
+          top: pos.top,
+          pointerEvents: 'none',
+          zIndex: 50,
+        }}>
+          <div style={{ width: 2, height: pos.bottom - pos.top, background: cursor.color }} />
+          <div style={{
+            position: 'absolute', top: -20, left: 0,
+            background: cursor.color, color: '#fff',
+            fontSize: 11, fontWeight: 600,
+            padding: '2px 6px',
+            borderRadius: '3px 3px 3px 0',
+            whiteSpace: 'nowrap',
+          }}>
+            {cursor.username}
+          </div>
+        </div>
+      )
+    } catch { return null }
+  })}
+  <EditorContent
+    editor={editor}
+    className="prose max-w-none focus:outline-none min-h-[400px]"
+    style={{ color: 'var(--text-primary)' }}
+  />
+</div>
 
       {/* Media modal */}
       {mediaModal && (

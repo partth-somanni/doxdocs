@@ -1,10 +1,11 @@
 import { useState, useEffect, useCallback } from 'react'
-import { SignedIn, SignedOut, SignInButton, UserButton } from '@clerk/clerk-react'
+import { SignedIn, SignedOut, SignInButton, UserButton, useUser } from '@clerk/clerk-react'
 import Editor from './Editor'
 
 const API = 'http://localhost:3000'
 
 export default function App() {
+  const { user } = useUser()
   const [docs, setDocs] = useState([])
   const [activeDocId, setActiveDocId] = useState(null)
   const [dark, setDark] = useState(() => localStorage.getItem('theme') === 'dark')
@@ -232,7 +233,12 @@ export default function App() {
           >
             <SignedIn>
               {activeDocId
-                ? <Editor key={activeDocId} docId={activeDocId} onTitleChange={updateDocTitle} />
+                ? <Editor
+  key={activeDocId}
+  docId={activeDocId}
+  onTitleChange={updateDocTitle}
+  username={user?.firstName || user?.emailAddresses?.[0]?.emailAddress || 'Anonymous'}
+/>
                 : <p style={{ textAlign: 'center', marginTop: 80, color: 'var(--text-muted)' }}>
                     Click + to create a new document.
                   </p>
