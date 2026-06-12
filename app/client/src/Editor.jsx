@@ -12,6 +12,7 @@ import TiptapImage from '@tiptap/extension-image'
 import { Mark, Node, mergeAttributes } from '@tiptap/core'
 import MediaModal from './MediaModal'
 import { io } from 'socket.io-client'
+import ExportMenu from './ExportMenu'
 
 const API = 'http://localhost:3000'
 
@@ -44,7 +45,6 @@ const FontSize = Mark.create({
 })
 
 // ── ResizableImage extension ─────────────────────────────────────────────
-// Wraps the built-in Image node with width/style support
 
 const ResizableImage = TiptapImage.extend({
   addAttributes() {
@@ -60,7 +60,7 @@ const ResizableImage = TiptapImage.extend({
   },
 })
 
-// ── Video embed node ─────────────────────────────────────────────────────
+// ── Video embed node (resizable) ───────────────────────────────────────────
 
 const VideoEmbed = Node.create({
   name: 'videoEmbed',
@@ -70,6 +70,7 @@ const VideoEmbed = Node.create({
   addAttributes() {
     return {
       src: { default: null },
+      width: { default: '100' }, // percent, as string
     }
   },
 
@@ -77,51 +78,119 @@ const VideoEmbed = Node.create({
     return [{ tag: 'div[data-video-embed]' }]
   },
 
-renderHTML({ node }) {
-  return [
-    'div',
-    {
-      'data-video-embed': '',
-      src: node.attrs.src,
-    },
-  ]
-},
+  renderHTML({ node }) {
+    return [
+      'div',
+      {
+        'data-video-embed': '',
+        src: node.attrs.src,
+        width: node.attrs.width,
+        style: `width: ${node.attrs.width}%`,
+      },
+    ]
+  },
 
-addNodeView() {
-  return ({ node }) => {
-    const wrapper = document.createElement('div')
-    const src = node.attrs.src || ''
-    const isSpotify = src.includes('open.spotify.com/embed')
-
-    wrapper.style.cssText = isSpotify
-      ? 'margin:12px 0;border-radius:8px;overflow:hidden;'
-      : 'position:relative;padding-top:56.25%;margin:12px 0;border-radius:8px;overflow:hidden;background:#000'
-
-    const isEmbed =
+  addNodeView() {
+    return ({ node, getPos, editor }) => {
+      const src = node.attrs.src || ''
+      const isSpotify = src.includes('open.spotify.com/embed')
+      const isEmbed =
         src.includes('youtube.com/embed') ||
         src.includes('player.vimeo.com') ||
         src.includes('open.spotify.com/embed')
 
-    if (isEmbed) {
-      const iframe = document.createElement('iframe')
-      iframe.src = src
-      iframe.allow = 'accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture'
-      iframe.allowFullscreen = true
-      iframe.style.cssText = isSpotify
-        ? 'width:100%;height:152px;border:none;'
-        : 'position:absolute;inset:0;width:100%;height:100%;border:none'
-      wrapper.appendChild(iframe)
-    } else {
-      const video = document.createElement('video')
-      video.src = src
-      video.controls = true
-      video.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;object-fit:contain'
-      wrapper.appendChild(video)
-    }
+      // Outer wrapper — controls width, holds resize handle
+      const outer = document.createElement('div')
+      outer.style.cssText = `position:relative;width:${node.attrs.width}%;margin:12px 0;`
 
-    return { dom: wrapper }
-  }
-},
+      // Inner wrapper — the actual aspect-ratio box
+      const inner = document.createElement('div')
+      inner.style.cssText = isSpotify
+        ? 'border-radius:8px;overflow:hidden;'
+        : 'position:relative;padding-top:56.25%;border-radius:8px;overflow:hidden;background:#000'
+
+      if (isEmbed) {
+        const iframe = document.createElement('iframe')
+        iframe.src = src
+        iframe.allow = 'accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture'
+        iframe.allowFullscreen = true
+        iframe.style.cssText = isSpotify
+          ? 'width:100%;height:152px;border:none;display:block;'
+          : 'position:absolute;inset:0;width:100%;height:100%;border:none'
+        inner.appendChild(iframe)
+      } else {
+        const video = document.createElement('video')
+        video.src = src
+        video.controls = true
+        video.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;object-fit:contain'
+        inner.appendChild(video)
+      }
+
+      outer.appendChild(inner)
+
+      // Resize handle — bottom-right corner
+      const handle = document.createElement('div')
+      handle.style.cssText = `
+        position:absolute; right:-4px; bottom:-4px;
+        width:14px; height:14px;
+        background:#2563eb; border:2px solid #fff;
+        border-radius:50%; cursor:nwse-resize;
+        opacity:0; transition:opacity 0.15s;
+      `
+      outer.appendChild(handle)
+
+      outer.addEventListener('mouseenter', () => { handle.style.opacity = '1' })
+      outer.addEventListener('mouseleave', () => { handle.style.opacity = '0' })
+
+      // Drag-to-resize logic
+      let startX, startWidth, parentWidth
+
+      const onMouseMove = (e) => {
+        const dx = e.clientX - startX
+        let newWidthPx = startWidth + dx
+        let newWidthPercent = Math.round((newWidthPx / parentWidth) * 100)
+        newWidthPercent = Math.min(100, Math.max(10, newWidthPercent))
+        outer.style.width = `${newWidthPercent}%`
+        outer.dataset.pendingWidth = newWidthPercent
+      }
+
+      const onMouseUp = () => {
+        document.removeEventListener('mousemove', onMouseMove)
+        document.removeEventListener('mouseup', onMouseUp)
+        document.removeEventListener('mouseleave', onMouseUp)
+
+        const newWidth = outer.dataset.pendingWidth
+        if (newWidth && typeof getPos === 'function') {
+          const pos = getPos()
+          editor.commands.command(({ tr }) => {
+            tr.setNodeAttribute(pos, 'width', newWidth)
+            return true
+          })
+        }
+      }
+
+      handle.addEventListener('mousedown', (e) => {
+        e.preventDefault()
+        e.stopPropagation()
+        startX = e.clientX
+        startWidth = outer.getBoundingClientRect().width
+        parentWidth = outer.parentElement.getBoundingClientRect().width
+
+        document.addEventListener('mousemove', onMouseMove)
+        document.addEventListener('mouseup', onMouseUp)
+        document.addEventListener('mouseleave', onMouseUp)
+      })
+
+      return {
+        dom: outer,
+        update: (updatedNode) => {
+          if (updatedNode.type.name !== 'videoEmbed') return false
+          outer.style.width = `${updatedNode.attrs.width}%`
+          return true
+        },
+      }
+    }
+  },
 })
 
 // ── Constants ────────────────────────────────────────────────────────────
@@ -168,6 +237,7 @@ export default function Editor({ docId, onTitleChange, username }) {
   const socketRef = useRef(null)
   const isRemoteUpdate = useRef(false)
 
+  const [, forceUpdate] = useState(0)
   const editor = useEditor({
     extensions: [
       StarterKit,
@@ -183,6 +253,9 @@ export default function Editor({ docId, onTitleChange, username }) {
       Placeholder.configure({ placeholder: 'Start typing your document here...' }),
     ],
     content: '',
+    onTransaction: () => {
+      forceUpdate(n => n + 1)
+    },
   })
 
   const saveDoc = useCallback(
@@ -209,62 +282,61 @@ export default function Editor({ docId, onTitleChange, username }) {
   }, [editor, docId])
 
   useEffect(() => {
-  if (!editor || !docId) return
-  const handler = () => {
-    if (isRemoteUpdate.current) return
-    const content = editor.getHTML()
-    saveDoc(docId, content, title)
-    socketRef.current?.emit('doc-change', { docId, content })
-  }
-  editor.on('update', handler)
-  return () => editor.off('update', handler)
-}, [editor, docId, title, saveDoc])
+    if (!editor || !docId) return
+    const handler = () => {
+      if (isRemoteUpdate.current) return
+      const content = editor.getHTML()
+      saveDoc(docId, content, title)
+      socketRef.current?.emit('doc-change', { docId, content })
+    }
+    editor.on('update', handler)
+    return () => editor.off('update', handler)
+  }, [editor, docId, title, saveDoc])
 
-useEffect(() => {
-  if (!editor || !socketRef.current) return
-  const handler = () => {
-    const { from } = editor.state.selection
-    const color = collaborators.find(u => u.name === username)?.color || '#60a5fa'
-    socketRef.current?.emit('cursor-move', { docId, position: from, username, color })
-  }
-  editor.on('selectionUpdate', handler)
-  return () => editor.off('selectionUpdate', handler)
-}, [editor, docId, username])
+  useEffect(() => {
+    if (!editor || !socketRef.current) return
+    const handler = () => {
+      const { from } = editor.state.selection
+      const color = collaborators.find(u => u.name === username)?.color || '#60a5fa'
+      socketRef.current?.emit('cursor-move', { docId, position: from, username, color })
+    }
+    editor.on('selectionUpdate', handler)
+    return () => editor.off('selectionUpdate', handler)
+  }, [editor, docId, username])
 
-useEffect(() => {
-  if (!docId || !username) return
+  useEffect(() => {
+    if (!docId || !username) return
 
-  const socket = io('http://localhost:3000')
-  socketRef.current = socket
+    const socket = io('http://localhost:3000')
+    socketRef.current = socket
 
-  socket.emit('join-doc', { docId, username })
+    socket.emit('join-doc', { docId, username })
 
-  socket.on('doc-update', ({ content }) => {
-    if (!editor) return
-    isRemoteUpdate.current = true
-    const { from, to } = editor.state.selection
-    editor.commands.setContent(content, false)
-    editor.commands.setTextSelection({ from, to })
-    isRemoteUpdate.current = false
-  })
+    socket.on('doc-update', ({ content }) => {
+      if (!editor) return
+      isRemoteUpdate.current = true
+      const { from, to } = editor.state.selection
+      editor.commands.setContent(content, false)
+      editor.commands.setTextSelection({ from, to })
+      isRemoteUpdate.current = false
+    })
 
-  socket.on('presence', (users) => {
-  setCollaborators(users.filter(u => u.name !== username))
-  // Remove cursors for users who left
-  setRemoteCursors(prev => {
-    const active = new Set(users.map(u => u.name))
-    return Object.fromEntries(
-      Object.entries(prev).filter(([, c]) => active.has(c.username))
-    )
-  })
-})
+    socket.on('presence', (users) => {
+      setCollaborators(users.filter(u => u.name !== username))
+      setRemoteCursors(prev => {
+        const active = new Set(users.map(u => u.name))
+        return Object.fromEntries(
+          Object.entries(prev).filter(([, c]) => active.has(c.username))
+        )
+      })
+    })
 
-  socket.on('cursor-update', ({ socketId, position, username: uname, color }) => {
-  setRemoteCursors(prev => ({ [socketId]: { position, username: uname, color } }))
-})
+    socket.on('cursor-update', ({ socketId, position, username: uname, color }) => {
+      setRemoteCursors(prev => ({ [socketId]: { position, username: uname, color } }))
+    })
 
-  return () => socket.disconnect()
-}, [docId, username, editor])
+    return () => socket.disconnect()
+  }, [docId, username, editor])
 
   useEffect(() => {
     const close = () => { setShowTextColors(false); setShowHighlights(false) }
@@ -285,14 +357,10 @@ useEffect(() => {
   }
 
   function insertVideo({ src }) {
-    console.log("Inserting:", src)
-
     editor.chain().focus().insertContent({
       type: 'videoEmbed',
       attrs: { src },
     }).run()
-
-    console.log(editor.getJSON())
   }
 
   // ── Style helpers ──────────────────────────────────────────────────────
@@ -360,7 +428,6 @@ useEffect(() => {
         className="flex flex-wrap gap-1 mb-4 items-center p-2 rounded-lg"
         style={{ background: 'var(--bg-toolbar)', border: '1px solid var(--border)' }}
       >
-        {/* Inline formatting */}
         <button style={{ ...btnStyle(editor.isActive('bold')), fontWeight: 'bold' }}
           onClick={() => editor.chain().focus().toggleBold().run()}>B</button>
 
@@ -372,7 +439,6 @@ useEffect(() => {
 
         <Sep />
 
-        {/* Headings + list */}
         <button style={btnStyle(editor.isActive('heading', { level: 1 }))}
           onClick={() => editor.chain().focus().toggleHeading({ level: 1 }).run()}>H1</button>
 
@@ -384,7 +450,6 @@ useEffect(() => {
 
         <Sep />
 
-        {/* Alignment */}
         <button style={btnStyle(editor.isActive({ textAlign: 'left' }))}
           title="Align left"
           onClick={() => editor.chain().focus().setTextAlign('left').run()}>≡←</button>
@@ -403,7 +468,6 @@ useEffect(() => {
 
         <Sep />
 
-        {/* Font family */}
         <select title="Font family" style={selectStyle} defaultValue=""
           onChange={(e) => {
             const val = e.target.value
@@ -414,7 +478,6 @@ useEffect(() => {
           {FONT_FAMILIES.map(f => <option key={f.value} value={f.value}>{f.label}</option>)}
         </select>
 
-        {/* Font size */}
         <select title="Font size" style={{ ...selectStyle, width: 64 }} defaultValue=""
           onChange={(e) => {
             const val = e.target.value
@@ -482,7 +545,6 @@ useEffect(() => {
 
         <Sep />
 
-        {/* ── Image button ── */}
         <button
           title="Insert image"
           style={btnStyle(false)}
@@ -491,7 +553,6 @@ useEffect(() => {
           🖼
         </button>
 
-        {/* ── Video button ── */}
         <button
           title="Embed video"
           style={btnStyle(false)}
@@ -500,47 +561,46 @@ useEffect(() => {
           ▶
         </button>
 
-        {/* Save status */}
-        <span className="ml-auto text-xs" style={{ color: 'var(--text-muted)' }}>
+        <span className="ml-auto text-xs flex items-center gap-2" style={{ color: 'var(--text-muted)' }}>
           {saveStatus}
+           <ExportMenu editor={editor} title={title} />
         </span>
       </div>
 
       {/* Editor content */}
       <div style={{ position: 'relative' }}>
-  {Object.entries(remoteCursors).map(([id, cursor]) => {
-    try {
-      const pos = editor.view.coordsAtPos(cursor.position)
-      const editorRect = editor.view.dom.getBoundingClientRect()
-      return (
-        <div key={id} style={{
-          position: 'fixed',
-          left: pos.left,
-          top: pos.top,
-          pointerEvents: 'none',
-          zIndex: 50,
-        }}>
-          <div style={{ width: 2, height: pos.bottom - pos.top, background: cursor.color }} />
-          <div style={{
-            position: 'absolute', top: -20, left: 0,
-            background: cursor.color, color: '#fff',
-            fontSize: 11, fontWeight: 600,
-            padding: '2px 6px',
-            borderRadius: '3px 3px 3px 0',
-            whiteSpace: 'nowrap',
-          }}>
-            {cursor.username}
-          </div>
-        </div>
-      )
-    } catch { return null }
-  })}
-  <EditorContent
-    editor={editor}
-    className="prose max-w-none focus:outline-none min-h-[400px]"
-    style={{ color: 'var(--text-primary)' }}
-  />
-</div>
+        {Object.entries(remoteCursors).map(([id, cursor]) => {
+          try {
+            const pos = editor.view.coordsAtPos(cursor.position)
+            return (
+              <div key={id} style={{
+                position: 'fixed',
+                left: pos.left,
+                top: pos.top,
+                pointerEvents: 'none',
+                zIndex: 50,
+              }}>
+                <div style={{ width: 2, height: pos.bottom - pos.top, background: cursor.color }} />
+                <div style={{
+                  position: 'absolute', top: -20, left: 0,
+                  background: cursor.color, color: '#fff',
+                  fontSize: 11, fontWeight: 600,
+                  padding: '2px 6px',
+                  borderRadius: '3px 3px 3px 0',
+                  whiteSpace: 'nowrap',
+                }}>
+                  {cursor.username}
+                </div>
+              </div>
+            )
+          } catch { return null }
+        })}
+        <EditorContent
+          editor={editor}
+          className="prose max-w-none focus:outline-none min-h-[400px]"
+          style={{ color: 'var(--text-primary)' }}
+        />
+      </div>
 
       {/* Media modal */}
       {mediaModal && (
@@ -553,4 +613,3 @@ useEffect(() => {
     </div>
   )
 }
-
