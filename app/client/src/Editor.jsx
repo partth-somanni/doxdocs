@@ -75,7 +75,7 @@ const VideoEmbed = Node.create({
   addAttributes() {
     return {
       src: { default: null },
-      width: { default: '100' }, // percent, as string
+      width: { default: '100' },
     }
   },
 
@@ -104,11 +104,9 @@ const VideoEmbed = Node.create({
         src.includes('player.vimeo.com') ||
         src.includes('open.spotify.com/embed')
 
-      // Outer wrapper — controls width, holds resize handle
       const outer = document.createElement('div')
       outer.style.cssText = `position:relative;width:${node.attrs.width}%;margin:12px 0;`
 
-      // Inner wrapper — the actual aspect-ratio box
       const inner = document.createElement('div')
       inner.style.cssText = isSpotify
         ? 'border-radius:8px;overflow:hidden;'
@@ -133,7 +131,6 @@ const VideoEmbed = Node.create({
 
       outer.appendChild(inner)
 
-      // Resize handle — bottom-right corner
       const handle = document.createElement('div')
       handle.style.cssText = `
         position:absolute; right:-4px; bottom:-4px;
@@ -147,7 +144,6 @@ const VideoEmbed = Node.create({
       outer.addEventListener('mouseenter', () => { handle.style.opacity = '1' })
       outer.addEventListener('mouseleave', () => { handle.style.opacity = '0' })
 
-      // Drag-to-resize logic
       let startX, startWidth, parentWidth
 
       const onMouseMove = (e) => {
@@ -210,15 +206,288 @@ const FONT_FAMILIES = [
 
 const FONT_SIZES = [12, 14, 16, 18, 20, 24, 28, 32, 36, 48]
 
+// ── Improved colour palettes ─────────────────────────────────────────────
+// Organised in visual rows: neutrals → warm → cool → vivid
+// Each row reads left-to-right light→dark so users can navigate by feel
+
 const TEXT_COLORS = [
-  '#000000', '#374151', '#ef4444', '#f97316',
-  '#eab308', '#22c55e', '#3b82f6', '#8b5cf6', '#ec4899',
+  // Row 1 – Neutrals
+  { hex: '#ffffff', label: 'White' },
+  { hex: '#f3f4f6', label: 'Gray 100' },
+  { hex: '#9ca3af', label: 'Gray 400' },
+  { hex: '#6b7280', label: 'Gray 500' },
+  { hex: '#374151', label: 'Gray 700' },
+  { hex: '#111827', label: 'Gray 900' },
+  { hex: '#000000', label: 'Black' },
+  // Row 2 – Reds / Oranges
+  { hex: '#fca5a5', label: 'Red 300' },
+  { hex: '#ef4444', label: 'Red 500' },
+  { hex: '#b91c1c', label: 'Red 700' },
+  { hex: '#fb923c', label: 'Orange 400' },
+  { hex: '#f97316', label: 'Orange 500' },
+  { hex: '#c2410c', label: 'Orange 700' },
+  { hex: '#fbbf24', label: 'Amber 400' },
+  // Row 3 – Greens / Teals
+  { hex: '#86efac', label: 'Green 300' },
+  { hex: '#22c55e', label: 'Green 500' },
+  { hex: '#15803d', label: 'Green 700' },
+  { hex: '#2dd4bf', label: 'Teal 400' },
+  { hex: '#0d9488', label: 'Teal 600' },
+  { hex: '#0f766e', label: 'Teal 700' },
+  { hex: '#06b6d4', label: 'Cyan 500' },
+  // Row 4 – Blues / Purples / Pinks
+  { hex: '#93c5fd', label: 'Blue 300' },
+  { hex: '#3b82f6', label: 'Blue 500' },
+  { hex: '#1d4ed8', label: 'Blue 700' },
+  { hex: '#a78bfa', label: 'Violet 400' },
+  { hex: '#8b5cf6', label: 'Violet 500' },
+  { hex: '#6d28d9', label: 'Violet 700' },
+  { hex: '#ec4899', label: 'Pink 500' },
 ]
 
 const HIGHLIGHT_COLORS = [
-  '#fef08a', '#bbf7d0', '#bfdbfe', '#f5d0fe',
-  '#fed7aa', '#fecaca', '#ffffff',
+  // Row 1 – Classic highlights (pastel)
+  { hex: '#fef08a', label: 'Yellow' },
+  { hex: '#bbf7d0', label: 'Green' },
+  { hex: '#bfdbfe', label: 'Blue' },
+  { hex: '#f5d0fe', label: 'Purple' },
+  { hex: '#fed7aa', label: 'Orange' },
+  { hex: '#fecaca', label: 'Red' },
+  { hex: '#99f6e4', label: 'Teal' },
+  // Row 2 – Vivid highlights
+  { hex: '#fde047', label: 'Yellow vivid' },
+  { hex: '#4ade80', label: 'Green vivid' },
+  { hex: '#60a5fa', label: 'Blue vivid' },
+  { hex: '#c084fc', label: 'Purple vivid' },
+  { hex: '#fb923c', label: 'Orange vivid' },
+  { hex: '#f87171', label: 'Red vivid' },
+  { hex: '#ffffff', label: 'White / Clear' },
 ]
+
+// ── Colour picker panel component ────────────────────────────────────────
+// Fixes all UX issues:
+//   • Larger swatches (28px) with visible hover ring
+//   • Active swatch gets a checkmark overlay
+//   • Hex input so users can type/paste any value
+//   • Native <input type="color"> fires only on "change" (not every drag tick)
+//     via a separate committed ref to avoid flooding editor transactions
+//   • Panel stays open until user explicitly closes or clicks outside
+//   • Reset button is a proper button with an × icon
+
+function ColorPanel({ colors, activeColor, onSelect, onReset, resetLabel = 'Remove color', mode = 'text' }) {
+  const [hexInput, setHexInput] = useState(activeColor || '')
+  const [hexError, setHexError] = useState(false)
+  // Track the value committed from the native color wheel so we only
+  // call onSelect once per interaction, not on every pointer drag event.
+  const nativePickerRef = useRef(null)
+
+  // Keep hex input in sync when activeColor changes externally (e.g. new selection)
+  useEffect(() => {
+    setHexInput(activeColor || '')
+    setHexError(false)
+  }, [activeColor])
+
+  const isValidHex = (v) => /^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/.test(v)
+
+  const handleHexKeyDown = (e) => {
+    if (e.key === 'Enter') commitHex()
+  }
+
+  const commitHex = () => {
+    const val = hexInput.startsWith('#') ? hexInput : `#${hexInput}`
+    if (isValidHex(val)) {
+      onSelect(val)
+      setHexError(false)
+    } else {
+      setHexError(true)
+    }
+  }
+
+  const COLS = 7
+  const rows = []
+  for (let i = 0; i < colors.length; i += COLS) {
+    rows.push(colors.slice(i, i + COLS))
+  }
+
+  return (
+    <div
+      style={{
+        width: 232,
+        background: 'var(--bg-surface)',
+        border: '1px solid var(--border)',
+        borderRadius: 10,
+        boxShadow: '0 8px 24px rgba(0,0,0,0.18)',
+        padding: '10px 10px 8px',
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 8,
+      }}
+    >
+      {/* Swatch grid */}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+        {rows.map((row, ri) => (
+          <div key={ri} style={{ display: 'flex', gap: 4 }}>
+            {row.map(({ hex, label }) => {
+              const isActive = activeColor && activeColor.toLowerCase() === hex.toLowerCase()
+              return (
+                <button
+                  key={hex}
+                  title={`${label} (${hex})`}
+                  onClick={() => onSelect(hex)}
+                  style={{
+                    width: 28,
+                    height: 28,
+                    borderRadius: 6,
+                    backgroundColor: hex,
+                    border: isActive
+                      ? '2px solid var(--text-primary)'
+                      : '1.5px solid rgba(0,0,0,0.12)',
+                    cursor: 'pointer',
+                    position: 'relative',
+                    flexShrink: 0,
+                    transition: 'transform 0.1s, box-shadow 0.1s',
+                    boxShadow: isActive ? '0 0 0 2px var(--bg-surface), 0 0 0 4px var(--text-primary)' : 'none',
+                  }}
+                  onMouseEnter={e => {
+                    e.currentTarget.style.transform = 'scale(1.18)'
+                    e.currentTarget.style.zIndex = '10'
+                    e.currentTarget.style.boxShadow = isActive
+                      ? '0 0 0 2px var(--bg-surface), 0 0 0 4px var(--text-primary)'
+                      : '0 2px 8px rgba(0,0,0,0.22)'
+                  }}
+                  onMouseLeave={e => {
+                    e.currentTarget.style.transform = 'scale(1)'
+                    e.currentTarget.style.zIndex = ''
+                    e.currentTarget.style.boxShadow = isActive
+                      ? '0 0 0 2px var(--bg-surface), 0 0 0 4px var(--text-primary)'
+                      : 'none'
+                  }}
+                >
+                  {isActive && (
+                    <span style={{
+                      position: 'absolute', inset: 0,
+                      display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      fontSize: 14, lineHeight: 1,
+                      // Choose checkmark colour by perceived brightness
+                      color: perceivedBrightness(hex) > 128 ? '#000' : '#fff',
+                      pointerEvents: 'none',
+                    }}>✓</span>
+                  )}
+                </button>
+              )
+            })}
+          </div>
+        ))}
+      </div>
+
+      {/* Divider */}
+      <div style={{ height: 1, background: 'var(--border)', margin: '0 -2px' }} />
+
+      {/* Hex input row */}
+      <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+        {/* Colour preview swatch */}
+        <div
+          style={{
+            width: 28, height: 28, borderRadius: 6, flexShrink: 0,
+            backgroundColor: isValidHex(hexInput.startsWith('#') ? hexInput : `#${hexInput}`) ? (hexInput.startsWith('#') ? hexInput : `#${hexInput}`) : '#e5e7eb',
+            border: '1.5px solid rgba(0,0,0,0.12)',
+          }}
+        />
+        {/* Hex text input */}
+        <input
+          type="text"
+          value={hexInput}
+          placeholder="#000000"
+          maxLength={7}
+          onChange={e => {
+            setHexInput(e.target.value)
+            setHexError(false)
+          }}
+          onKeyDown={handleHexKeyDown}
+          onBlur={commitHex}
+          style={{
+            flex: 1,
+            height: 28,
+            padding: '0 8px',
+            borderRadius: 6,
+            border: hexError ? '1.5px solid #ef4444' : '1.5px solid var(--border-btn)',
+            background: 'var(--bg-btn)',
+            color: 'var(--text-primary)',
+            fontSize: 12,
+            fontFamily: 'monospace',
+            outline: 'none',
+          }}
+        />
+        {/* Native colour wheel — only commits on `change` (mouse-up), not on drag */}
+        <label
+          title="Open colour wheel"
+          style={{
+            width: 28, height: 28, borderRadius: 6,
+            border: '1.5px solid var(--border-btn)',
+            background: 'var(--bg-btn)',
+            cursor: 'pointer',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            fontSize: 15, flexShrink: 0,
+            overflow: 'hidden',
+            position: 'relative',
+          }}
+        >
+          🎨
+          <input
+            ref={nativePickerRef}
+            type="color"
+            defaultValue={activeColor || '#000000'}
+            onChange={e => {
+              // `change` fires on mouse-up from the native picker — one event per interaction
+              const val = e.target.value
+              setHexInput(val)
+              onSelect(val)
+            }}
+            style={{
+              position: 'absolute', opacity: 0, inset: 0,
+              width: '100%', height: '100%', cursor: 'pointer',
+            }}
+          />
+        </label>
+      </div>
+
+      {/* Divider */}
+      <div style={{ height: 1, background: 'var(--border)', margin: '0 -2px' }} />
+
+      {/* Reset button */}
+      <button
+        onClick={onReset}
+        style={{
+          display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5,
+          width: '100%', height: 28,
+          borderRadius: 6,
+          border: '1.5px solid var(--border-btn)',
+          background: 'var(--bg-btn)',
+          color: 'var(--text-secondary)',
+          fontSize: 12,
+          cursor: 'pointer',
+        }}
+      >
+        <span style={{ fontSize: 14, lineHeight: 1 }}>✕</span>
+        {resetLabel}
+      </button>
+    </div>
+  )
+}
+
+// Returns 0–255 perceived brightness for a hex colour
+function perceivedBrightness(hex) {
+  const c = hex.replace('#', '')
+  const full = c.length === 3
+    ? c.split('').map(x => x + x).join('')
+    : c
+  const r = parseInt(full.slice(0, 2), 16)
+  const g = parseInt(full.slice(2, 4), 16)
+  const b = parseInt(full.slice(4, 6), 16)
+  return 0.299 * r + 0.587 * g + 0.114 * b
+}
+
+// ── Shared helpers ────────────────────────────────────────────────────────
 
 function debounce(fn, delay) {
   let timer
@@ -229,21 +498,21 @@ function Sep() {
   return <div className="mx-1 self-center" style={{ width: 1, height: 24, background: 'var(--border)' }} />
 }
 
-// ── ADDED: helper to count words from plain text ─────────────────────────
 function countWords(text) {
   return text.trim() === '' ? 0 : text.trim().split(/\s+/).length
 }
-// ── Editor component ─────────────────────────────────────────────────────
+
+// ── Editor ────────────────────────────────────────────────────────────────
 
 export default function Editor({ docId, onTitleChange, username }) {
   const [title, setTitle] = useState('Untitled')
   const [saveStatus, setSaveStatus] = useState('All changes saved')
   const [showTextColors, setShowTextColors] = useState(false)
   const [showHighlights, setShowHighlights] = useState(false)
-  const [mediaModal, setMediaModal] = useState(null) // null | 'image' | 'video'
+  const [mediaModal, setMediaModal] = useState(null)
   const [collaborators, setCollaborators] = useState([])
   const [remoteCursors, setRemoteCursors] = useState({})
-  const [wordCount, setWordCount] = useState(0) // ── ADDED
+  const [wordCount, setWordCount] = useState(0)
   const [charCount, setCharCount] = useState(0)
   const socketRef = useRef(null)
   const isRemoteUpdate = useRef(false)
@@ -267,7 +536,6 @@ export default function Editor({ docId, onTitleChange, username }) {
     onTransaction: () => {
       forceUpdate(n => n + 1)
     },
-     // ── ADDED: update word count on every content change
     onUpdate: ({ editor }) => {
       const text = editor.getText()
       setWordCount(countWords(text))
@@ -294,14 +562,12 @@ export default function Editor({ docId, onTitleChange, username }) {
       .then(r => r.json())
       .then(data => {
         setTitle(data.title || 'Untitled')
-if (data.content) {
-  editor.commands.setContent(data.content)
-  const text = editor.getText()
-  setWordCount(countWords(text))
-  setCharCount(text.length)
-}
-
-          
+        if (data.content) {
+          editor.commands.setContent(data.content)
+          const text = editor.getText()
+          setWordCount(countWords(text))
+          setCharCount(text.length)
+        }
       })
   }, [editor, docId])
 
@@ -343,9 +609,9 @@ if (data.content) {
       editor.commands.setContent(content, false)
       editor.commands.setTextSelection({ from, to })
       isRemoteUpdate.current = false
-const text = editor.getText()
-setWordCount(countWords(text))
-setCharCount(text.length)
+      const text = editor.getText()
+      setWordCount(countWords(text))
+      setCharCount(text.length)
     })
 
     socket.on('presence', (users) => {
@@ -365,15 +631,13 @@ setCharCount(text.length)
     return () => socket.disconnect()
   }, [docId, username, editor])
 
-useEffect(() => {
+  useEffect(() => {
     const close = () => { setShowTextColors(false); setShowHighlights(false) }
     document.addEventListener('click', close)
     return () => document.removeEventListener('click', close)
   }, [])
 
   if (!editor) return null
-
-  // ── Insert handlers ────────────────────────────────────────────────────
 
   function insertImage({ src, alt, width }) {
     editor.chain().focus().setImage({
@@ -389,8 +653,6 @@ useEffect(() => {
       attrs: { src },
     }).run()
   }
-
-  // ── Style helpers ──────────────────────────────────────────────────────
 
   const btnStyle = (isActive) => ({
     padding: '2px 8px',
@@ -409,6 +671,10 @@ useEffect(() => {
     color: 'var(--text-primary)',
     padding: '2px 4px', height: 28, cursor: 'pointer',
   }
+
+  // Derived active colours for the toolbar button indicators
+  const activeTextColor = editor.getAttributes('textStyle').color || null
+  const activeHighlightColor = editor.getAttributes('highlight').color || null
 
   return (
     <div>
@@ -431,25 +697,24 @@ useEffect(() => {
         placeholder="Untitled"
       />
 
-      {/* Word count badge */}
-        {/* Word & character count badge */}
-          <div style={{
-            display: 'inline-flex',
-            alignItems: 'center',
-            padding: '4px 12px',
-            borderRadius: 20,
-            background: 'var(--bg-toolbar)',
-            border: '1px solid var(--border)',
-            color: 'var(--text-secondary)',
-            fontSize: 12,
-            fontWeight: 500,
-            marginBottom: 12,
-            gap: 6,
-          }}>
-            <span>{wordCount} {wordCount === 1 ? 'word' : 'words'}</span>
-            <span style={{ color: 'var(--border)' }}>·</span>
-            <span>{charCount} {charCount === 1 ? 'character' : 'characters'}</span>
-          </div>
+      {/* Word & character count badge */}
+      <div style={{
+        display: 'inline-flex',
+        alignItems: 'center',
+        padding: '4px 12px',
+        borderRadius: 20,
+        background: 'var(--bg-toolbar)',
+        border: '1px solid var(--border)',
+        color: 'var(--text-secondary)',
+        fontSize: 12,
+        fontWeight: 500,
+        marginBottom: 12,
+        gap: 6,
+      }}>
+        <span>{wordCount} {wordCount === 1 ? 'word' : 'words'}</span>
+        <span style={{ color: 'var(--border)' }}>·</span>
+        <span>{charCount} {charCount === 1 ? 'character' : 'characters'}</span>
+      </div>
 
       {collaborators.length > 0 && (
         <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 12 }}>
@@ -538,54 +803,75 @@ useEffect(() => {
 
         <Sep />
 
-        {/* Text color */}
+        {/* ── Text colour button + panel ─────────────────────────────── */}
         <div className="relative" onClick={e => e.stopPropagation()}>
-          <button title="Text color" style={btnStyle(false)}
+          <button
+            title="Text colour"
+            style={btnStyle(!!activeTextColor)}
             onClick={() => { setShowHighlights(false); setShowTextColors(v => !v) }}
           >
             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
               <span style={{ fontWeight: 'bold', fontSize: 13, lineHeight: 1 }}>A</span>
-              <span style={{ height: 3, width: 18, borderRadius: 2, backgroundColor: editor.getAttributes('textStyle').color || 'var(--text-primary)' }} />
+              <span style={{
+                height: 3, width: 18, borderRadius: 2,
+                backgroundColor: activeTextColor || 'var(--text-primary)',
+              }} />
             </div>
           </button>
+
           {showTextColors && (
-            <div className="absolute top-9 left-0 z-50 p-2 flex flex-wrap gap-1 rounded-lg"
-              style={{ width: 144, background: 'var(--bg-surface)', border: '1px solid var(--border)', boxShadow: '0 4px 12px rgba(0,0,0,0.15)' }}>
-              {TEXT_COLORS.map(color => (
-                <button key={color} title={color}
-                  onClick={() => { editor.chain().focus().setColor(color).run(); setShowTextColors(false) }}
-                  style={{ width: 24, height: 24, borderRadius: '50%', backgroundColor: color, border: '1px solid var(--border-btn)', cursor: 'pointer' }} />
-              ))}
-              <button onClick={() => { editor.chain().focus().unsetColor().run(); setShowTextColors(false) }}
-                style={{ fontSize: 11, color: 'var(--text-muted)', width: '100%', marginTop: 4, background: 'none', border: 'none', cursor: 'pointer', textDecoration: 'underline' }}>
-                Reset
-              </button>
+            <div className="absolute top-9 left-0 z-50">
+              <ColorPanel
+                colors={TEXT_COLORS}
+                activeColor={activeTextColor}
+                onSelect={(color) => {
+                  editor.chain().focus().setColor(color).run()
+                  // Keep panel open so user can preview/adjust without re-clicking
+                }}
+                onReset={() => {
+                  editor.chain().focus().unsetColor().run()
+                  setShowTextColors(false)
+                }}
+                resetLabel="Remove text colour"
+                mode="text"
+              />
             </div>
           )}
         </div>
 
-        {/* Highlight */}
+        {/* ── Highlight button + panel ────────────────────────────────── */}
         <div className="relative" onClick={e => e.stopPropagation()}>
-          <button title="Highlight" style={btnStyle(false)}
+          <button
+            title="Highlight"
+            style={btnStyle(!!activeHighlightColor)}
             onClick={() => { setShowTextColors(false); setShowHighlights(v => !v) }}
           >
             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
               <span style={{ fontSize: 13, lineHeight: 1 }}>🖊</span>
-              <span style={{ height: 3, width: 18, borderRadius: 2, backgroundColor: editor.getAttributes('highlight').color || '#fef08a', border: '1px solid var(--border-btn)' }} />
+              <span style={{
+                height: 3, width: 18, borderRadius: 2,
+                backgroundColor: activeHighlightColor || '#fef08a',
+                border: '1px solid var(--border-btn)',
+              }} />
             </div>
           </button>
+
           {showHighlights && (
-            <div className="absolute top-9 left-0 z-50 p-2 flex flex-wrap gap-1 rounded-lg"
-              style={{ width: 144, background: 'var(--bg-surface)', border: '1px solid var(--border)', boxShadow: '0 4px 12px rgba(0,0,0,0.15)' }}>
-              {HIGHLIGHT_COLORS.map(color => (
-                <button key={color} title={color}
-                  onClick={() => { editor.chain().focus().toggleHighlight({ color }).run(); setShowHighlights(false) }}
-                  style={{ width: 24, height: 24, borderRadius: '50%', backgroundColor: color, border: '1px solid var(--border-btn)', cursor: 'pointer' }} />
-              ))}
-              <button onClick={() => { editor.chain().focus().unsetHighlight().run(); setShowHighlights(false) }}
-                style={{ fontSize: 11, color: 'var(--text-muted)', width: '100%', marginTop: 4, background: 'none', border: 'none', cursor: 'pointer', textDecoration: 'underline' }}>
-                Remove
-              </button>
+            <div className="absolute top-9 left-0 z-50">
+              <ColorPanel
+                colors={HIGHLIGHT_COLORS}
+                activeColor={activeHighlightColor}
+                onSelect={(color) => {
+                  editor.chain().focus().setHighlight({ color }).run()
+                  // Keep panel open — consistent with text colour panel behaviour
+                }}
+                onReset={() => {
+                  editor.chain().focus().unsetHighlight().run()
+                  setShowHighlights(false)
+                }}
+                resetLabel="Remove highlight"
+                mode="highlight"
+              />
             </div>
           )}
         </div>
