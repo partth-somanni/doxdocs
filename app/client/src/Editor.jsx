@@ -244,6 +244,7 @@ export default function Editor({ docId, onTitleChange, username }) {
   const [collaborators, setCollaborators] = useState([])
   const [remoteCursors, setRemoteCursors] = useState({})
   const [wordCount, setWordCount] = useState(0) // ── ADDED
+  const [charCount, setCharCount] = useState(0)
   const socketRef = useRef(null)
   const isRemoteUpdate = useRef(false)
 
@@ -268,7 +269,9 @@ export default function Editor({ docId, onTitleChange, username }) {
     },
      // ── ADDED: update word count on every content change
     onUpdate: ({ editor }) => {
-      setWordCount(countWords(editor.getText()))
+      const text = editor.getText()
+      setWordCount(countWords(text))
+      setCharCount(text.length)
     },
   })
 
@@ -291,11 +294,13 @@ export default function Editor({ docId, onTitleChange, username }) {
       .then(r => r.json())
       .then(data => {
         setTitle(data.title || 'Untitled')
-        if (data.content) {
-          editor.commands.setContent(data.content)
-          // ── ADDED: set initial word count after loading saved content
-          setWordCount(countWords(editor.getText()))
-        }
+if (data.content) {
+  editor.commands.setContent(data.content)
+  const text = editor.getText()
+  setWordCount(countWords(text))
+  setCharCount(text.length)
+}
+
           
       })
   }, [editor, docId])
@@ -338,8 +343,9 @@ export default function Editor({ docId, onTitleChange, username }) {
       editor.commands.setContent(content, false)
       editor.commands.setTextSelection({ from, to })
       isRemoteUpdate.current = false
-      // ── ADDED: update word count when a collaborator makes changes
-      setWordCount(countWords(editor.getText()))
+const text = editor.getText()
+setWordCount(countWords(text))
+setCharCount(text.length)
     })
 
     socket.on('presence', (users) => {
@@ -359,7 +365,7 @@ export default function Editor({ docId, onTitleChange, username }) {
     return () => socket.disconnect()
   }, [docId, username, editor])
 
-  useEffect(() => {
+useEffect(() => {
     const close = () => { setShowTextColors(false); setShowHighlights(false) }
     document.addEventListener('click', close)
     return () => document.removeEventListener('click', close)
@@ -424,6 +430,26 @@ export default function Editor({ docId, onTitleChange, username }) {
         }}
         placeholder="Untitled"
       />
+
+      {/* Word count badge */}
+        {/* Word & character count badge */}
+          <div style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            padding: '4px 12px',
+            borderRadius: 20,
+            background: 'var(--bg-toolbar)',
+            border: '1px solid var(--border)',
+            color: 'var(--text-secondary)',
+            fontSize: 12,
+            fontWeight: 500,
+            marginBottom: 12,
+            gap: 6,
+          }}>
+            <span>{wordCount} {wordCount === 1 ? 'word' : 'words'}</span>
+            <span style={{ color: 'var(--border)' }}>·</span>
+            <span>{charCount} {charCount === 1 ? 'character' : 'characters'}</span>
+          </div>
 
       {collaborators.length > 0 && (
         <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 12 }}>
@@ -622,21 +648,6 @@ export default function Editor({ docId, onTitleChange, username }) {
           style={{ color: 'var(--text-primary)' }}
         />
       </div>
-
-      {/* ── ADDED: Word count bar ─────────────────────────────────────── */}
-      <div style={{
-        marginTop: 12,
-        paddingTop: 8,
-        borderTop: '1px solid var(--border)',
-        display: 'flex',
-        justifyContent: 'flex-end',
-        alignItems: 'center',
-      }}>
-        <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>
-          {wordCount} {wordCount === 1 ? 'word' : 'words'}
-        </span>
-      </div>
-
 
       {/* Media modal */}
       {mediaModal && (
