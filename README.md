@@ -1,204 +1,128 @@
-```markdown
-# DOXDOCS
+# DoxDocs 📝
 
 **A Real-Time Collaborative Rich Text Document Editor**
 
-A modern web-based collaborative document editor that combines powerful rich text editing capabilities with seamless real-time collaboration. DOXDOCS enables multiple users to create, edit, and manage documents simultaneously through an intuitive and feature-rich interface.
+DoxDocs is a full-stack collaborative document editor that lets multiple users write, format, and edit documents together in real time — think Google Docs, built with React, Tiptap, Express, and Socket.IO.
+
+> ⚠️ **Deployment Note:** We debugged the errors for half a day but deployment was unsuccessful. Kindly **clone the repository and run it locally**.
 
 ---
 
-## Contributors
+## ✨ Features
 
-- **Parth Somani** (25114066)
-- **Sejal Sharma** (25114083)
+### 🔐 Authentication
+- Secure user authentication via **Clerk**
+- Google Sign-In and email-based login
+- Persistent user identity across sessions
+- Personalized collaborative editing using usernames
 
-**B.Tech, Computer Science and Engineering (First Year)**  
-**Indian Institute of Technology Roorkee**
+### 📂 Document Management
+- Create, open, rename, and delete documents
+- Auto-generated default title (`Untitled`)
+- Inline title editing
+- Drag-and-drop reordering of documents
+- Persistent storage with automatic loading on startup
+
+### ✍️ Rich Text Editing
+- Bold, italic, underline formatting
+- Heading styles (H1, H2)
+- Ordered lists
+- Text alignment — left, center, right, justified
+
+### 🎨 Styling & Customization
+- **43 font families** across system, sans-serif, serif, monospace, and decorative categories
+- Font sizes from **12px to 48px**
+- Full text colour palette (neutral, warm, cool, accent) with HEX input, native colour picker, and live preview
+- Multicolour highlighting (pastel & vivid palettes) with add/edit/remove support
+
+### 🖼️ Media Support
+- **Images:** local uploads, Base64, server-hosted, and external URLs — with resizing, responsive rendering, rounded styling, drag support, and alt text
+- **Video/Audio Embeds:** YouTube, Vimeo, Spotify, and direct video URLs
+- Responsive, resizable, and draggable media blocks with width adjustment (10–100%)
+
+### 🤝 Real-Time Collaboration
+- Simultaneous multi-user editing with live updates
+- Presence system with collaborator avatars and unique colours
+- Live cursor tracking with username labels
+- Join/leave session handling via Socket.IO
+
+### 💾 Auto-Save
+- Debounced auto-save after inactivity
+- Real-time **"Saving..."** / **"All changes saved"** indicators
+
+### 📊 Reading Analytics
+- Real-time word and character count
+- Reading time estimate (based on 200 WPM)
+
+### 📤 Export
+- Export documents as **PDF, DOCX, Markdown, HTML, and TXT**
+
+### 🌗 Themes
+- Light and Dark mode with theme switching
 
 ---
 
-## Abstract
+## 🛠️ Tech Stack
 
-DOXDOCS is a web-based real-time collaborative document editor designed to provide users with an intuitive and feature-rich writing experience. The application combines the flexibility of modern rich text editors with collaborative capabilities, enabling multiple users to work on the same document simultaneously.
-
-The project was developed using React, Express, SQLite, and Socket.IO, and deployed using Vercel and Railway.
-
----
-
-## Introduction
-
-Traditional text editors often lack collaboration features or require users to rely on large third-party platforms. DOXDOCS was developed to provide an independent, lightweight, and modern document editing solution with support for real-time collaboration, media embedding, and multiple export options.
-
-The project demonstrates the practical application of full-stack web development concepts, including frontend development, backend APIs, database management, authentication, and deployment.
-
----
-
-## Objectives
-
-- Develop a rich text document editor with modern formatting capabilities.
-- Enable real-time collaboration between multiple users.
-- Provide secure user authentication.
-- Support multimedia content within documents.
-- Allow users to export documents in multiple formats.
-- Deploy the application for public accessibility.
-
----
-
-## Technology Stack
-
-### Frontend
-
-- React
+**Frontend**
+- React (component-driven, hooks-based state management)
 - Vite
-- Tiptap Editor
-- Tailwind CSS
-- Socket.IO Client
-- Clerk Authentication
+- [Tiptap](https://tiptap.dev/) — extension-based rich text editor
 
-### Backend
-
+**Backend**
 - Express.js
-- Socket.IO
-- SQLite (`better-sqlite3`)
-
-### Deployment
-
-> Deployment attempts were made, but stable production deployment was unsuccessful due to recurring integration and configuration errors.
-
-- Vercel (Frontend)
-- Railway (Backend)
+- Socket.IO — real-time collaboration
+- SQLite (via `better-sqlite3`) — persistent storage
 
 ---
 
-## Features
+## 🚀 Getting Started (Local Setup)
 
-### Authentication
+\`\`\`bash
+# Clone the repository
+git clone https://github.com/<your-username>/doxdocs.git
+cd doxdocs
 
-- Secure authentication using Clerk
-- Google Sign-In support
-- Email-based authentication
+# Install dependencies for frontend and backend
+cd client && npm install
+cd ../server && npm install
+\`\`\`
 
-### Rich Text Editing
+### Environment Variables
 
-- Bold, italic, and underline formatting
-- Multiple heading levels
-- Text alignment controls
-- Font customization
-- Text colours and highlights
-- Ordered and unordered lists
+Create a \`.env\` file in the \`server\` directory:
 
-### Real-Time Collaboration
+\`\`\`env
+PORT=5000
+CLERK_SECRET_KEY=your_clerk_secret_key
+\`\`\`
 
-- Simultaneous multi-user editing
-- Presence indicators showing active collaborators
-- Live cursor tracking
-- Automatic document saving
+Create a \`.env\` file in the \`client\` directory:
 
-### Document Management
+\`\`\`env
+VITE_API_URL=http://localhost:5000
+VITE_CLERK_PUBLISHABLE_KEY=your_clerk_publishable_key
+\`\`\`
 
-- Create documents
-- Rename documents
-- Delete documents
-- Drag-and-drop document reordering
+### Run the App
 
-### User Experience
+\`\`\`bash
+# Start the backend
+cd server && npm run dev
 
-- Light theme support
-- Dark theme support
-
-### Media Support
-
-#### Images
-
-- Local image insertion
-- Base64 image support
-- Server-hosted images
-- External image URLs
-- Image resizing
-
-#### Videos and Media Embeds
-
-- YouTube embeds
-- Vimeo embeds
-- Spotify embeds
-- Direct video URL support
-
-### Export Options
-
-Documents can be exported as:
-
-- PDF
-- DOCX
-- Markdown (`.md`)
-- HTML
-- TXT
+# Start the frontend (in a new terminal)
+cd client && npm run dev
+\`\`\`
 
 ---
 
-## Testing
+## 👥 Contributors
 
-The application was tested manually to verify the functionality of various modules, including:
-
-- Authentication
-- Document editing
-- Collaboration features
-- Media handling
-- Export functionality
-
-The deployed version was also used to ensure compatibility and proper integration between the frontend and backend components.
+- **Parth Somani** (25114066) — B.Tech CSE, First Year
+- **Sejal Sharma** (25114083) — B.Tech CSE, First Year
 
 ---
 
-## Advantages
+## 📄 Submitted To
 
-- User-friendly interface
-- Supports simultaneous collaboration
-- Multiple export formats increase flexibility
-- Rich multimedia capabilities
-- Secure authentication mechanisms
-- Accessible through web deployment without installation
-
----
-
-## Limitations
-
-- SQLite limits scalability for very large deployments
-- Manual testing was performed instead of automated testing
-- Advanced conflict resolution techniques such as CRDTs were not implemented
-- Folder organization and workspace management are currently unavailable
-- Stable production deployment could not be achieved due to persistent deployment issues
-
----
-
-## Future Scope
-
-Potential future enhancements include:
-
-- Version history and document recovery
-- AI-assisted writing features
-- Commenting and suggestion mode
-- Advanced collaborative conflict resolution
-- Cloud-based media storage
-- Team workspaces and folder organization
-- Automated testing pipelines
-
----
-
-## Conclusion
-
-DOXDOCS successfully demonstrates the development of a modern collaborative document editing platform using contemporary web technologies. The project integrates rich text editing, authentication, real-time communication, media support, and deployment into a single application.
-
-Building this project provided valuable experience in full-stack development and highlighted both the challenges and opportunities involved in developing collaborative software systems.
-
----
-
-## References
-
-- React Documentation – https://react.dev
-- Tiptap Documentation – https://tiptap.dev
-- Express.js Documentation – https://expressjs.com
-- Socket.IO Documentation – https://socket.io
-- Clerk Documentation – https://clerk.com/docs
-- Vercel Documentation – https://vercel.com/docs
-- Railway Documentation – https://docs.railway.app
-```
+Hostel Council, IIT Roorkee
