@@ -47,6 +47,7 @@ const FontSize = Mark.create({
 // ── ResizableImage extension ─────────────────────────────────────────────
 
 const ResizableImage = TiptapImage.extend({
+  draggable: true,
   addAttributes() {
     return {
       ...this.parent?.(),
@@ -66,6 +67,7 @@ const VideoEmbed = Node.create({
   name: 'videoEmbed',
   group: 'block',
   atom: true,
+  draggable: true,
 
   addAttributes() {
     return {
@@ -445,8 +447,8 @@ export default function Editor({ docId, onTitleChange, username }) {
         <button style={btnStyle(editor.isActive('heading', { level: 2 }))}
           onClick={() => editor.chain().focus().toggleHeading({ level: 2 }).run()}>H2</button>
 
-        <button style={btnStyle(editor.isActive('bulletList'))}
-          onClick={() => editor.chain().focus().toggleBulletList().run()}>• List</button>
+        <button style={btnStyle(editor.isActive('orderedList'))}
+          onClick={() => editor.chain().focus().toggleOrderedList().run()}>1. List</button>
 
         <Sep />
 

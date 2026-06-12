@@ -67,3 +67,21 @@ body {
   color: var(--text-primary);
 }
 
+.prose ol {
+  list-style-type: decimal;
+  padding-left: 1.5rem;
+}
+
+.prose h1 {
+  font-size: 2em;
+  font-weight: 700;
+  margin: 0.67em 0;
+  line-height: 1.2;
+}
+
+.prose h2 {
+  font-size: 1.5em;
+  font-weight: 700;
+  margin: 0.75em 0;
+  line-height: 1.3;
+}

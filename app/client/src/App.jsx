@@ -1,8 +1,70 @@
 import { useState, useEffect, useCallback } from 'react'
 import { SignedIn, SignedOut, SignInButton, UserButton, useUser } from '@clerk/clerk-react'
 import Editor from './Editor'
-
+import {
+  DndContext, closestCenter,
+  KeyboardSensor, PointerSensor,
+  useSensor, useSensors,
+} from '@dnd-kit/core'
+import {
+  arrayMove, SortableContext,
+  sortableKeyboardCoordinates, verticalListSortingStrategy,
+  useSortable,
+} from '@dnd-kit/sortable'
+import { CSS } from '@dnd-kit/utilities'
 const API = 'http://localhost:3000'
+
+
+function SortableDoc({ doc, activeDocId, openDoc, deleteDoc }) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: doc.id })
+  const [hovered, setHovered] = useState(false)
+
+  const active = activeDocId === doc.id
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.5 : 1,
+  }
+
+  return (
+    <div
+      ref={setNodeRef}
+      style={{
+        ...style,
+        display: 'flex',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        padding: '7px 10px',
+        borderRadius: 6,
+        cursor: 'grab',
+        background: active ? 'var(--bg-active)' : hovered ? 'var(--bg-toolbar)' : 'transparent',
+        color: active ? 'var(--text-active)' : 'var(--text-secondary)',
+        fontWeight: active ? 500 : 400,
+        fontSize: 13,
+      }}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+      onClick={() => openDoc(doc.id)}
+      {...attributes}
+      {...listeners}
+    >
+      <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+        {doc.title || 'Untitled'}
+      </span>
+      {hovered && (
+        <button
+          onClick={(e) => { e.stopPropagation(); deleteDoc(e, doc.id) }}
+          title="Delete document"
+          style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#ef4444', fontSize: 16, lineHeight: 1, padding: '0 2px', marginLeft: 6 }}
+        >
+          ×
+        </button>
+      )}
+    </div>
+  )
+}
+
 
 export default function App() {
   const { user } = useUser()
@@ -79,6 +141,26 @@ export default function App() {
     setDocs(prev => prev.map(d => d.id === id ? { ...d, title: newTitle } : d))
   }
 
+  const sensors = useSensors(
+  useSensor(PointerSensor, {
+    activationConstraint: {
+      distance: 8, // must move 8px before drag starts
+    },
+  }),
+  useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
+  )
+
+  function handleDragEnd(event) {
+    const { active, over } = event
+    if (!over || active.id === over.id) return
+
+    setDocs(prev => {
+      const oldIndex = prev.findIndex(d => d.id === active.id)
+      const newIndex = prev.findIndex(d => d.id === over.id)
+      return arrayMove(prev, oldIndex, newIndex)
+    })
+  }
+
   return (
     <div className="flex h-screen" style={{ background: 'var(--bg-page)', color: 'var(--text-primary)' }}>
 
@@ -128,17 +210,21 @@ export default function App() {
               No documents yet. Click + to create one.
             </p>
           ) : (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 2, overflowY: 'auto', flex: 1 }}>
-              {docs.map(doc => (
-                <DocItem
-                  key={doc.id}
-                  doc={doc}
-                  active={activeDocId === doc.id}
-                  onOpen={() => openDoc(doc.id)}
-                  onDelete={(e) => deleteDoc(e, doc.id)}
-                />
-              ))}
-            </div>
+            <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+              <SortableContext items={docs.map(d => d.id)} strategy={verticalListSortingStrategy}>
+                <div className="flex flex-col gap-1 overflow-y-auto" style={{ flex: 1 }}>
+                  {docs.map(doc => (
+                    <SortableDoc
+                      key={doc.id}
+                      doc={doc}
+                      activeDocId={activeDocId}
+                      openDoc={openDoc}
+                      deleteDoc={deleteDoc}
+                    />
+                  ))}
+                </div>
+              </SortableContext>
+            </DndContext>
           )}
         </div>
       </div>
@@ -252,45 +338,6 @@ export default function App() {
           </div>
         </div>
       </div>
-    </div>
-  )
-}
-
-// ── Sub-components ──────────────────────────────────────────────────────────
-
-function DocItem({ doc, active, onOpen, onDelete }) {
-  const [hovered, setHovered] = useState(false)
-  return (
-    <div
-      onClick={onOpen}
-      onMouseEnter={() => setHovered(true)}
-      onMouseLeave={() => setHovered(false)}
-      style={{
-        display: 'flex',
-        justifyContent: 'space-between',
-        alignItems: 'center',
-        padding: '7px 10px',
-        borderRadius: 6,
-        cursor: 'pointer',
-        background: active ? 'var(--bg-active)' : hovered ? 'var(--bg-toolbar)' : 'transparent',
-        color: active ? 'var(--text-active)' : 'var(--text-secondary)',
-        fontWeight: active ? 500 : 400,
-        fontSize: 13,
-        transition: 'background 0.12s',
-      }}
-    >
-      <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-        {doc.title || 'Untitled'}
-      </span>
-      {hovered && (
-        <button
-          onClick={onDelete}
-          title="Delete document"
-          style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#ef4444', fontSize: 16, lineHeight: 1, padding: '0 2px', marginLeft: 6 }}
-        >
-          ×
-        </button>
-      )}
     </div>
   )
 }
