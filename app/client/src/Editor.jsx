@@ -59,6 +59,9 @@ const ResizableImage = TiptapImage.extend({
       alt: { default: '' },
     }
   },
+  renderHTML({ HTMLAttributes }) {
+    return ['img', mergeAttributes(HTMLAttributes, { draggable: 'true' })]
+  },
 })
 
 // ── Video embed node (resizable) ───────────────────────────────────────────
