@@ -14,7 +14,7 @@ import MediaModal from './MediaModal'
 import { io } from 'socket.io-client'
 import ExportMenu from './ExportMenu'
 
-const API = 'http://localhost:3000'
+const API = import.meta.env.VITE_API_URL || 'http://localhost:3000'
 
 // ── FontSize mark ────────────────────────────────────────────────────────
 
@@ -597,7 +597,7 @@ export default function Editor({ docId, onTitleChange, username }) {
   useEffect(() => {
     if (!docId || !username) return
 
-    const socket = io('http://localhost:3000')
+    const socket = io(import.meta.env.VITE_API_URL || 'http://localhost:3000')
     socketRef.current = socket
 
     socket.emit('join-doc', { docId, username })
