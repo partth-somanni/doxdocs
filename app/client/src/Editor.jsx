@@ -613,6 +613,7 @@ export default function Editor({ docId, onTitleChange, username }) {
   })
 
   socket.on('cursor-update', ({ socketId, position, username: uname, color }) => {
+    console.log('Received cursor-update from', uname, 'at position', position)
     setRemoteCursors(prev => ({ ...prev, [socketId]: { position, username: uname, color } }))
   })
 
@@ -620,6 +621,7 @@ export default function Editor({ docId, onTitleChange, username }) {
   const myColor = '#60a5fa'
   const cursorHandler = () => {
     const { from } = editor.state.selection
+    console.log('Emitting cursor-move at position', from)
     socket.emit('cursor-move', { docId, position: from, username, color: myColor })
   }
   editor.on('selectionUpdate', cursorHandler)
