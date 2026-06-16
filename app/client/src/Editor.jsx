@@ -623,9 +623,14 @@ export default function Editor({ docId, onTitleChange, username }) {
   })
 
   socket.on('cursor-update', ({ socketId, position, username: uname, color }) => {
-    console.log('Received cursor-update from', uname, 'at position', position)
-    setRemoteCursors(prev => ({ ...prev, [socketId]: { position, username: uname, color } }))
+  setRemoteCursors(prev => {
+    // Remove any old entries with the same username (different stale socketId)
+    const filtered = Object.fromEntries(
+      Object.entries(prev).filter(([, c]) => c.username !== uname)
+    )
+    return { ...filtered, [socketId]: { position, username: uname, color } }
   })
+})
 
   // Emit cursor position on selection change — now safely inside socket scope
   const myColor = '#60a5fa'
