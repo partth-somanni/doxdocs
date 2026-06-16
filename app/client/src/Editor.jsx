@@ -903,31 +903,42 @@ export default function Editor({ docId, onTitleChange, username }) {
       {/* Editor content */}
       <div style={{ position: 'relative' }}>
         {Object.entries(remoteCursors).map(([id, cursor]) => {
-          try {
-            const pos = editor.view.coordsAtPos(cursor.position)
-            return (
-              <div key={id} style={{
-                position: 'fixed',
-                left: pos.left,
-                top: pos.top,
-                pointerEvents: 'none',
-                zIndex: 50,
-              }}>
-                <div style={{ width: 2, height: pos.bottom - pos.top, background: cursor.color }} />
-                <div style={{
-                  position: 'absolute', top: -20, left: 0,
-                  background: cursor.color, color: '#fff',
-                  fontSize: 11, fontWeight: 600,
-                  padding: '2px 6px',
-                  borderRadius: '3px 3px 3px 0',
-                  whiteSpace: 'nowrap',
-                }}>
-                  {cursor.username}
-                </div>
-              </div>
-            )
-          } catch { return null }
-        })}
+  if (!editor || !editor.view) return null
+  const docSize = editor.state.doc.content.size
+  if (cursor.position == null || cursor.position > docSize) {
+    console.log('Skipping cursor - out of bounds', cursor.position, 'docSize:', docSize)
+    return null
+  }
+  try {
+    const pos = editor.view.coordsAtPos(cursor.position)
+    const editorRect = editor.view.dom.getBoundingClientRect()
+    console.log('Cursor for', cursor.username, 'pos:', pos, 'editorRect:', editorRect)
+    return (
+      <div key={id} style={{
+        position: 'fixed',
+        left: pos.left,
+        top: pos.top,
+        pointerEvents: 'none',
+        zIndex: 9999,
+      }}>
+        <div style={{ width: 2, height: pos.bottom - pos.top, background: cursor.color }} />
+        <div style={{
+          position: 'absolute', top: -20, left: 0,
+          background: cursor.color, color: '#fff',
+          fontSize: 11, fontWeight: 600,
+          padding: '2px 6px',
+          borderRadius: '3px 3px 3px 0',
+          whiteSpace: 'nowrap',
+        }}>
+          {cursor.username}
+        </div>
+      </div>
+    )
+  } catch (err) {
+    console.log('Cursor render error:', err.message)
+    return null
+  }
+})}
         <EditorContent
           editor={editor}
           className="prose max-w-none focus:outline-none min-h-[400px]"
