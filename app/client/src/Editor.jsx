@@ -918,25 +918,24 @@ export default function Editor({ docId, onTitleChange, username }) {
 
       {/* Editor content */}
       <div style={{ position: 'relative' }}>
-        {Object.entries(remoteCursors).map(([id, cursor]) => {
-  if (!editor || !editor.view) return null
-  const docSize = editor.state.doc.content.size
-  if (cursor.position == null || cursor.position > docSize) {
-    console.log('Skipping cursor - out of bounds', cursor.position, 'docSize:', docSize)
-    return null
-  }
-  try {
-    const pos = editor.view.coordsAtPos(cursor.position)
-    const editorRect = editor.view.dom.getBoundingClientRect()
-    console.log('Cursor for', cursor.username, 'pos:', pos, 'editorRect:', editorRect)
-    return (
-      <div key={id} style={{
-        position: 'fixed',
-        left: pos.left,
-        top: pos.top,
-        pointerEvents: 'none',
-        zIndex: 9999,
-      }}>
+  {Object.entries(remoteCursors).map(([id, cursor]) => {
+    if (!editor || !editor.view) return null
+    const docSize = editor.state.doc.content.size
+    if (cursor.position == null || cursor.position > docSize) return null
+    try {
+      const pos = editor.view.coordsAtPos(cursor.position)
+      const editorRect = editor.view.dom.getBoundingClientRect()
+      // Position relative to the editor container, not the viewport
+      const relativeLeft = pos.left - editorRect.left
+      const relativeTop = pos.top - editorRect.top
+      return (
+        <div key={id} style={{
+          position: 'absolute',
+          left: relativeLeft,
+          top: relativeTop,
+          pointerEvents: 'none',
+          zIndex: 50,
+        }}>
         <div style={{ width: 2, height: pos.bottom - pos.top, background: cursor.color }} />
         <div style={{
           position: 'absolute', top: -20, left: 0,
