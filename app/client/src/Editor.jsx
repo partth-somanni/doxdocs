@@ -584,52 +584,51 @@ export default function Editor({ docId, onTitleChange, username }) {
   }, [editor, docId, title, saveDoc])
 
   useEffect(() => {
-    if (!editor || !socketRef.current) return
-    const handler = () => {
-      const { from } = editor.state.selection
-      const color = collaborators.find(u => u.name === username)?.color || '#60a5fa'
-      socketRef.current?.emit('cursor-move', { docId, position: from, username, color })
-    }
-    editor.on('selectionUpdate', handler)
-    return () => editor.off('selectionUpdate', handler)
-  }, [editor, docId, username])
+  if (!docId || !username || !editor) return
 
-  useEffect(() => {
-    if (!docId || !username) return
+  const socket = io(import.meta.env.VITE_API_URL || 'http://localhost:3000')
+  socketRef.current = socket
 
-    const socket = io(import.meta.env.VITE_API_URL || 'http://localhost:3000')
-    socketRef.current = socket
+  socket.emit('join-doc', { docId, username })
 
-    socket.emit('join-doc', { docId, username })
+  socket.on('doc-update', ({ content }) => {
+    isRemoteUpdate.current = true
+    const { from, to } = editor.state.selection
+    editor.commands.setContent(content, false)
+    editor.commands.setTextSelection({ from, to })
+    isRemoteUpdate.current = false
+    const text = editor.getText()
+    setWordCount(countWords(text))
+    setCharCount(text.length)
+  })
 
-    socket.on('doc-update', ({ content }) => {
-      if (!editor) return
-      isRemoteUpdate.current = true
-      const { from, to } = editor.state.selection
-      editor.commands.setContent(content, false)
-      editor.commands.setTextSelection({ from, to })
-      isRemoteUpdate.current = false
-      const text = editor.getText()
-      setWordCount(countWords(text))
-      setCharCount(text.length)
+  socket.on('presence', (users) => {
+    setCollaborators(users.filter(u => u.name !== username))
+    setRemoteCursors(prev => {
+      const active = new Set(users.map(u => u.name))
+      return Object.fromEntries(
+        Object.entries(prev).filter(([, c]) => active.has(c.username))
+      )
     })
+  })
 
-    socket.on('presence', (users) => {
-      setCollaborators(users.filter(u => u.name !== username))
-      setRemoteCursors(prev => {
-        const active = new Set(users.map(u => u.name))
-        return Object.fromEntries(
-          Object.entries(prev).filter(([, c]) => active.has(c.username))
-        )
-      })
-    })
+  socket.on('cursor-update', ({ socketId, position, username: uname, color }) => {
+    setRemoteCursors(prev => ({ ...prev, [socketId]: { position, username: uname, color } }))
+  })
 
-    socket.on('cursor-update', ({ socketId, position, username: uname, color }) => {
-      setRemoteCursors(prev => ({ [socketId]: { position, username: uname, color } }))
-    })
+  // Emit cursor position on selection change — now safely inside socket scope
+  const myColor = '#60a5fa'
+  const cursorHandler = () => {
+    const { from } = editor.state.selection
+    socket.emit('cursor-move', { docId, position: from, username, color: myColor })
+  }
+  editor.on('selectionUpdate', cursorHandler)
 
-    return () => socket.disconnect()
-  }, [docId, username, editor])
+  return () => {
+    editor.off('selectionUpdate', cursorHandler)
+    socket.disconnect()
+  }
+}, [docId, username, editor])
 
   useEffect(() => {
     const close = () => { setShowTextColors(false); setShowHighlights(false) }
