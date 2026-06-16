@@ -591,16 +591,16 @@ export default function Editor({ docId, onTitleChange, username }) {
 
   socket.emit('join-doc', { docId, username })
 
-  socket.on('doc-update', ({ content }) => {
-    isRemoteUpdate.current = true
-    const { from, to } = editor.state.selection
-    editor.commands.setContent(content, false)
-    editor.commands.setTextSelection({ from, to })
-    isRemoteUpdate.current = false
-    const text = editor.getText()
-    setWordCount(countWords(text))
-    setCharCount(text.length)
-  })
+  socket.on('doc-update', debounce(({ content }) => {
+  isRemoteUpdate.current = true
+  const { from, to } = editor.state.selection
+  editor.commands.setContent(content, false)
+  editor.commands.setTextSelection({ from, to })
+  isRemoteUpdate.current = false
+  const text = editor.getText()
+  setWordCount(countWords(text))
+  setCharCount(text.length)
+}, 300))
 
   socket.on('presence', (users) => {
     setCollaborators(users.filter(u => u.name !== username))
