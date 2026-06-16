@@ -533,9 +533,9 @@ export default function Editor({ docId, onTitleChange, username }) {
       Placeholder.configure({ placeholder: 'Start typing your document here...' }),
     ],
     content: '',
-    onTransaction: () => {
+    onTransaction: debounce(() => {
       forceUpdate(n => n + 1)
-    },
+      }, 50),
     onUpdate: ({ editor }) => {
       const text = editor.getText()
       setWordCount(countWords(text))
@@ -592,15 +592,25 @@ export default function Editor({ docId, onTitleChange, username }) {
   socket.emit('join-doc', { docId, username })
 
   socket.on('doc-update', debounce(({ content }) => {
+  if (!editor || editor.isDestroyed) return
+  const currentContent = editor.getHTML()
+  if (currentContent === content) return // no actual change, skip re-render
+
   isRemoteUpdate.current = true
   const { from, to } = editor.state.selection
-  editor.commands.setContent(content, false)
-  editor.commands.setTextSelection({ from, to })
+  editor.commands.setContent(content, false, { preserveWhitespace: 'full' })
+  
+  // Clamp selection to new doc size to avoid errors
+  const docSize = editor.state.doc.content.size
+  const safeFrom = Math.min(from, docSize)
+  const safeTo = Math.min(to, docSize)
+  editor.commands.setTextSelection({ from: safeFrom, to: safeTo })
+  
   isRemoteUpdate.current = false
   const text = editor.getText()
   setWordCount(countWords(text))
   setCharCount(text.length)
-}, 300))
+}, 400))
 
   socket.on('presence', (users) => {
     setCollaborators(users.filter(u => u.name !== username))
