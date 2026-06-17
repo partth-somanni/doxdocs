@@ -543,33 +543,58 @@ export default function Editor({ docId, onTitleChange, username }) {
     },
   })
 
-  const saveDoc = useCallback(
-    debounce(async (id, content, docTitle) => {
-      setSaveStatus('Saving...')
-      await fetch(`${API}/docs/${id}`, {
+  const hasLoadedRef = useRef(false)
+
+const saveDoc = useCallback(
+  debounce(async (id, content, docTitle) => {
+    if (!hasLoadedRef.current) {
+      console.warn('Blocked save - document not yet loaded from server')
+      return
+    }
+    setSaveStatus('Saving...')
+    try {
+      const res = await fetch(`${API}/docs/${id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ content, title: docTitle }),
       })
+      if (!res.ok) throw new Error('Save failed')
       setSaveStatus('All changes saved')
-    }, 1000),
-    []
-  )
+    } catch (err) {
+      console.error('Save failed:', err)
+      setSaveStatus('Save failed - check connection')
+    }
+  }, 1000),
+  []
+)
 
   useEffect(() => {
-    if (!editor || !docId) return
-    fetch(`${API}/docs/${docId}`)
-      .then(r => r.json())
-      .then(data => {
-        setTitle(data.title || 'Untitled')
-        if (data.content) {
-          editor.commands.setContent(data.content)
-          const text = editor.getText()
-          setWordCount(countWords(text))
-          setCharCount(text.length)
-        }
-      })
-  }, [editor, docId])
+  if (!editor || !docId) return
+  let cancelled = false
+
+  fetch(`${API}/docs/${docId}`)
+    .then(r => {
+      if (!r.ok) throw new Error('Failed to load document')
+      return r.json()
+    })
+    .then(data => {
+      if (cancelled) return
+      setTitle(data.title || 'Untitled')
+      if (data.content) {
+        editor.commands.setContent(data.content)
+        const text = editor.getText()
+        setWordCount(countWords(text))
+        setCharCount(text.length)
+      }
+      hasLoadedRef.current = true
+    })
+    .catch(err => {
+      console.error('Document load failed, NOT clearing editor:', err)
+      setSaveStatus('Failed to load - please refresh')
+    })
+
+  return () => { cancelled = true }
+}, [editor, docId])
 
   useEffect(() => {
     if (!editor || !docId) return
